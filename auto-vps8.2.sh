@@ -12,10 +12,6 @@ echo "Mulai instalasi auto setup VPS Ubuntu/Debian dengan PHP 8.2..."
 echo "Mengupdate sistem..."
 apt update && apt upgrade -y
 
-# Install git
-echo "Menginstall git..."
-apt install -y git
-
 # Install nginx
 echo "Menginstall nginx..."
 apt install -y nginx
@@ -66,6 +62,44 @@ server {
 }
 EOL
 
+# Install phpMyAdmin secara manual
+echo "Mengunduh dan menginstall phpMyAdmin..."
+mkdir -p /var/www/__pma
+wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
+unzip /tmp/phpmyadmin.zip -d /tmp/
+mv /tmp/phpMyAdmin-*-all-languages/* /var/www/__pma
+rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
+
+# Buat virtual host untuk phpMyAdmin
+cat > /etc/nginx/sites-available/phpmyadmin <<EOL
+server {
+    listen 8080;
+    listen [::]:8080;
+
+    root /var/www/__pma;
+    index index.php index.html index.htm;
+
+    server_name phpmyadmin.local;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~ \.php\$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.2-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOL
+
+ln -s /etc/nginx/sites-available/phpmyadmin /etc/nginx/sites-enabled/
+
 # Restart layanan untuk memastikan semuanya berjalan
 echo "Merestart layanan..."
 systemctl restart nginx
@@ -79,9 +113,8 @@ ufw reload
 
 # Output informasi versi perangkat lunak yang terinstal
 echo "Instalasi selesai. Versi perangkat lunak yang terinstal:"
-echo "Git: $(git --version)"
 echo "Nginx: $(nginx -v 2>&1)"
 echo "MySQL: $(mysql --version)"
 echo "PHP: $(php -v)"
 
-echo "Auto setup selesai! VPS siap digunakan."
+echo "Auto setup selesai! phpMyAdmin dapat diakses di http://[IP_VPS]:8080/__pma."
