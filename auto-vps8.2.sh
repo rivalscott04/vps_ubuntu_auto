@@ -22,33 +22,96 @@ show_menu() {
 
 # Function to install PHP
 install_php() {
-    echo "Pilih versi PHP yang akan diinstall:"
-    echo "1. PHP 8.1"
-    echo "2. PHP 8.2"
-    echo "3. PHP 8.3"
-    read -p "Pilihan [1-3]: " php_choice
+    echo "Pilih metode instalasi PHP:"
+    echo "1. Install satu versi PHP"
+    echo "2. Install multiple versi PHP"
+    read -p "Pilihan [1-2]: " install_type
 
     # Add PHP repository
     apt install -y software-properties-common
     add-apt-repository -y ppa:ondrej/php
     apt update
 
-    case $php_choice in
-        1) php_version="8.1" ;;
-        2) php_version="8.2" ;;
-        3) php_version="8.3" ;;
-        *) echo "Pilihan tidak valid"; return ;;
+    case $install_type in
+        1)
+            echo "Pilih versi PHP yang akan diinstall:"
+            echo "1. PHP 8.1"
+            echo "2. PHP 8.2"
+            echo "3. PHP 8.3"
+            read -p "Pilihan [1-3]: " php_choice
+
+            case $php_choice in
+                1) php_version="8.1" ;;
+                2) php_version="8.2" ;;
+                3) php_version="8.3" ;;
+                *) echo "Pilihan tidak valid"; return ;;
+            esac
+
+            # Install PHP and extensions
+            apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli \
+                php${php_version}-common php${php_version}-mysql php${php_version}-zip \
+                php${php_version}-gd php${php_version}-mbstring php${php_version}-curl \
+                php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
+                php${php_version}-intl php${php_version}-readline php${php_version}-ldap \
+                php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis
+
+            echo "PHP ${php_version} terinstall!"
+            ;;
+        2)
+            echo "Pilih versi PHP yang akan diinstall (pisahkan dengan spasi, contoh: 1 2 3):"
+            echo "1. PHP 8.1"
+            echo "2. PHP 8.2"
+            echo "3. PHP 8.3"
+            read -p "Pilihan [1-3]: " -a php_choices
+
+            declare -a versions_to_install
+
+            for choice in "${php_choices[@]}"; do
+                case $choice in
+                    1) versions_to_install+=("8.1") ;;
+                    2) versions_to_install+=("8.2") ;;
+                    3) versions_to_install+=("8.3") ;;
+                    *) echo "Pilihan tidak valid: $choice" ;;
+                esac
+            done
+
+            if [ ${#versions_to_install[@]} -eq 0 ]; then
+                echo "Tidak ada versi PHP yang valid dipilih"
+                return
+            fi
+
+            for php_version in "${versions_to_install[@]}"; do
+                echo "Menginstall PHP $php_version dan ekstensi..."
+                
+                apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli \
+                    php${php_version}-common php${php_version}-mysql php${php_version}-zip \
+                    php${php_version}-gd php${php_version}-mbstring php${php_version}-curl \
+                    php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
+                    php${php_version}-intl php${php_version}-readline php${php_version}-ldap \
+                    php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis
+
+                if [ $? -eq 0 ]; then
+                    echo "PHP $php_version terinstall dengan sukses!"
+                    echo "Versi: $(php${php_version} -v | head -n 1)"
+                else
+                    echo "Gagal menginstall PHP $php_version"
+                fi
+            done
+
+            echo -e "\n=== Ringkasan Instalasi PHP ==="
+            for version in "${versions_to_install[@]}"; do
+                if command -v php${version} &> /dev/null; then
+                    echo "✓ PHP ${version} terinstall"
+                else
+                    echo "✗ PHP ${version} gagal terinstall"
+                fi
+            done
+            ;;
+        *)
+            echo "Pilihan tidak valid"
+            return
+            ;;
     esac
-
-    # Install PHP and extensions needed for Laravel
-    apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli \
-        php${php_version}-common php${php_version}-mysql php${php_version}-zip \
-        php${php_version}-gd php${php_version}-mbstring php${php_version}-curl \
-        php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
-        php${php_version}-intl php${php_version}-readline php${php_version}-ldap \
-        php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis
-
-    echo "PHP ${php_version} terinstall!"
 }
 
 # Function to install web server
@@ -341,7 +404,8 @@ while true; do
         5) configure_webapp ;;
         6) install_database ;;
         7) install_phpmyadmin ;;
-        8) echo "Terima kasih!"; exit 0 ;;
+        8) echo "Terima kasih!"; exit 0
+8) echo "Terima kasih!"; exit 0 ;;
         *) echo "Pilihan tidak valid" ;;
     esac
 
