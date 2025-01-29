@@ -1,21 +1,40 @@
 #!/bin/bash
 
+# Warna untuk output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Fungsi untuk logging
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
 # Pastikan script dijalankan sebagai root
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Script ini harus dijalankan sebagai root. Gunakan sudo."
+    log_error "Script ini harus dijalankan sebagai root. Gunakan sudo."
     exit 1
 fi
 
 # Fungsi untuk memastikan paket tertentu sudah terinstal
 check_and_install_package() {
     if ! dpkg -l | grep -q "^ii  $1 "; then
-        echo "Paket $1 belum terinstal. Apakah Anda ingin menginstalnya? (y/n)"
-        read -p "Jawaban: " answer
-        if [ "$answer" == "y" ]; then
-            apt update && apt upgrade -y
-            apt install -y $1
+        log_warning "Paket $1 belum terinstal. Menginstal..."
+        apt update > /dev/null 2>&1
+        apt install -y $1 > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            log_info "Paket $1 berhasil diinstal"
         else
-            echo "Paket $1 diperlukan untuk menjalankan fitur ini."
+            log_error "Gagal menginstal paket $1"
             exit 1
         fi
     fi
@@ -27,17 +46,17 @@ add_ppa_if_needed() {
     local ppa_list="/etc/apt/sources.list.d/${ppa_name}*.list"
 
     if ls $ppa_list 1> /dev/null 2>&1; then
-        echo "✅ PPA $ppa_name sudah ditambahkan, tidak perlu menambahkan ulang."
+        log_info "PPA $ppa_name sudah ditambahkan"
     else
-        echo "🔄 Menambahkan PPA $ppa_name..."
-        add-apt-repository -y ppa:$ppa_name
-        apt update && apt upgrade -y
+        log_info "Menambahkan PPA $ppa_name..."
+        add-apt-repository -y ppa:$ppa_name > /dev/null 2>&1
+        apt update > /dev/null 2>&1
     fi
 }
 
 # Fungsi untuk menambahkan PPA Web Server
 add_webserver_ppa() {
-    echo "🔧 Menyesuaikan PPA untuk Web Server..."
+    log_info "Menyesuaikan PPA untuk Web Server..."
 
     if dpkg -l | grep -q "apache2"; then
         add_ppa_if_needed "ondrej/apache2"
@@ -50,7 +69,7 @@ add_webserver_ppa() {
         case $nginx_choice in
             1) add_ppa_if_needed "ondrej/nginx-mainline" ;;
             2) add_ppa_if_needed "ondrej/nginx" ;;
-            *) echo "Pilihan tidak valid, menggunakan default (Stable)."
+            *) log_warning "Pilihan tidak valid, menggunakan default (Stable)"
                add_ppa_if_needed "ondrej/nginx" ;;
         esac
     fi
@@ -58,7 +77,7 @@ add_webserver_ppa() {
 
 # Fungsi untuk menambahkan PPA PHP
 add_php_repository() {
-    echo "🔧 Menyesuaikan PPA untuk PHP..."
+    log_info "Menyesuaikan PPA untuk PHP..."
     add_ppa_if_needed "ondrej/php"
 }
 
@@ -67,7 +86,7 @@ install_php() {
     add_webserver_ppa
     add_php_repository
 
-    apt update
+    apt update > /dev/null 2>&1
 
     echo "Pilih versi PHP yang akan diinstall:"
     echo "1. PHP 8.1"
@@ -79,17 +98,25 @@ install_php() {
         1) php_version="8.1" ;;
         2) php_version="8.2" ;;
         3) php_version="8.3" ;;
-        *) echo "Pilihan tidak valid"; return ;;
+        *) log_error "Pilihan tidak valid"; return ;;
     esac
 
+    log_info "Menginstal PHP ${php_version} dan ekstensi..."
+    
     apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli \
                    php${php_version}-common php${php_version}-mysql php${php_version}-zip \
                    php${php_version}-gd php${php_version}-mbstring php${php_version}-curl \
                    php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
                    php${php_version}-intl php${php_version}-readline php${php_version}-ldap \
-                   php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis
+                   php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis \
+                   > /dev/null 2>&1
 
-    echo "✅ PHP ${php_version} berhasil diinstall!"
+    if [ $? -eq 0 ]; then
+        log_info "PHP ${php_version} berhasil diinstall!"
+        configure_php ${php_version}
+    else
+        log_error "Gagal menginstal PHP ${php_version}"
+    fi
 }
 
 # Fungsi untuk menginstal Web Server
@@ -100,18 +127,22 @@ install_webserver() {
     read -p "Pilihan [1-2]: " server_choice
 
     case $server_choice in
-        1) apt install -y apache2
+        1) log_info "Menginstal Apache2..."
+           apt install -y apache2 > /dev/null 2>&1
            add_webserver_ppa
-           a2enmod rewrite
+           a2enmod rewrite > /dev/null 2>&1
+           a2enmod ssl > /dev/null 2>&1
+           a2enmod headers > /dev/null 2>&1
            systemctl restart apache2
-           echo "✅ Apache terinstall!"
+           log_info "Apache2 berhasil diinstall!"
            ;;
-        2) apt install -y nginx
+        2) log_info "Menginstal Nginx..."
+           apt install -y nginx > /dev/null 2>&1
            add_webserver_ppa
            systemctl restart nginx
-           echo "✅ Nginx terinstall!"
+           log_info "Nginx berhasil diinstall!"
            ;;
-        *) echo "Pilihan tidak valid" ;;
+        *) log_error "Pilihan tidak valid" ;;
     esac
 }
 
@@ -120,53 +151,64 @@ install_database() {
     echo "Pilih database yang akan diinstall:"
     echo "1. MySQL"
     echo "2. PostgreSQL"
-    read -p "Pilihan [1-2]: " db_choice
+    echo "3. MariaDB"
+    read -p "Pilihan [1-3]: " db_choice
 
     case $db_choice in
-        1) apt install -y mysql-server
+        1) log_info "Menginstal MySQL..."
+           apt install -y mysql-server > /dev/null 2>&1
            mysql_secure_installation
-           echo "✅ MySQL berhasil diinstall!"
+           log_info "MySQL berhasil diinstall!"
            ;;
-        2) apt install -y postgresql postgresql-contrib
-           echo "✅ PostgreSQL berhasil diinstall!"
+        2) log_info "Menginstal PostgreSQL..."
+           apt install -y postgresql postgresql-contrib > /dev/null 2>&1
+           log_info "PostgreSQL berhasil diinstall!"
            ;;
-        *) echo "Pilihan tidak valid" ;;
+        3) log_info "Menginstal MariaDB..."
+           apt install -y mariadb-server > /dev/null 2>&1
+           mysql_secure_installation
+           log_info "MariaDB berhasil diinstall!"
+           ;;
+        *) log_error "Pilihan tidak valid" ;;
     esac
 }
 
 # Fungsi untuk menginstal phpMyAdmin
 install_phpmyadmin() {
+    log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
     check_and_install_package wget
 
-    read -p "Masukkan domain untuk phpMyAdmin (contoh: a.domain.com): " domain_name
+    read -p "Masukkan domain untuk phpMyAdmin (contoh: pma.domain.com): " domain_name
     read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
     read -p "Web server yang digunakan (apache/nginx): " web_server
 
     pma_path="/var/www/${pma_alias}"
     mkdir -p ${pma_path}
 
+    log_info "Mengunduh phpMyAdmin..."
     wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
-    unzip /tmp/phpmyadmin.zip -d /tmp/
+    unzip -q /tmp/phpmyadmin.zip -d /tmp/
     mv /tmp/phpMyAdmin-*-all-languages/* ${pma_path}/
     rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
+
+    # Generate random blowfish secret
+    blowfish_secret=$(openssl rand -base64 32)
+    cp ${pma_path}/config.sample.inc.php ${pma_path}/config.inc.php
+    sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '${blowfish_secret}'/" ${pma_path}/config.inc.php
 
     if [ "$web_server" = "nginx" ]; then
         cat > /etc/nginx/sites-available/${domain_name} <<EOL
 server {
     listen 80;
+    listen [::]:80;
     server_name ${domain_name};
 
-    root /var/www/html;
+    root ${pma_path};
     index index.php index.html index.htm;
 
     location / {
-        try_files \$uri \$uri/ =404;
-    }
-
-    location /${pma_alias} {
-        alias ${pma_path};
-        index index.php index.html index.htm;
+        try_files \$uri \$uri/ /index.php?\$args;
     }
 
     location ~ \.php$ {
@@ -188,11 +230,164 @@ EOL
         cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
 <VirtualHost *:80>
     ServerName ${domain_name}
-    DocumentRoot /var/www/html
-
-    Alias /${pma_alias} ${pma_path}
+    DocumentRoot ${pma_path}
 
     <Directory ${pma_path}>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+</VirtualHost>
+EOL
+        a2ensite ${domain_name} > /dev/null 2>&1
+        systemctl restart apache2
+    fi
+
+    # Set correct permissions
+    chown -R www-data:www-data ${pma_path}
+    chmod -R 755 ${pma_path}
+
+    log_info "phpMyAdmin berhasil diinstall!"
+    log_info "Akses phpMyAdmin di: http://${domain_name}"
+}
+
+# Fungsi untuk menginstal Node.js & npm
+install_nodejs() {
+    log_info "Mempersiapkan instalasi Node.js..."
+    check_and_install_package curl
+
+    # Tambahkan repository Node.js
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
+    
+    log_info "Menginstal Node.js dan npm..."
+    apt install -y nodejs > /dev/null 2>&1
+    
+    # Update npm ke versi terbaru
+    npm install -g npm@latest > /dev/null 2>&1
+
+    # Install beberapa package global yang umum digunakan
+    log_info "Menginstal package global..."
+    npm install -g pm2 yarn > /dev/null 2>&1
+
+    if command -v node > /dev/null; then
+        node_version=$(node -v)
+        npm_version=$(npm -v)
+        log_info "Node.js ${node_version} dan npm ${npm_version} berhasil diinstall!"
+    else
+        log_error "Gagal menginstal Node.js"
+    fi
+}
+
+# Fungsi untuk menginstal FrankenPHP
+install_frankenphp() {
+    log_info "Mempersiapkan instalasi FrankenPHP..."
+    check_and_install_package curl
+    check_and_install_package gpg
+
+    # Tambahkan repository FrankenPHP
+    curl -sSL https://deb.frankenphp.dev/frankenphp.asc | gpg --dearmor -o /usr/share/keyrings/frankenphp-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list > /dev/null
+
+    log_info "Menginstal FrankenPHP..."
+    apt update > /dev/null 2>&1
+    apt install -y frankenphp > /dev/null 2>&1
+
+    if [ $? -eq 0 ]; then
+        log_info "FrankenPHP berhasil diinstall!"
+        # Buat service untuk FrankenPHP
+        cat > /etc/systemd/system/frankenphp.service <<EOL
+[Unit]
+Description=FrankenPHP Application Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+ExecStart=/usr/local/bin/frankenphp run --config /etc/frankenphp/Caddyfile
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOL
+        systemctl daemon-reload
+        systemctl enable frankenphp
+        systemctl start frankenphp
+    else
+        log_error "Gagal menginstal FrankenPHP"
+    fi
+}
+
+# Fungsi untuk konfigurasi aplikasi web
+configure_webapp() {
+    read -p "Masukkan domain aplikasi web: " domain_name
+    read -p "Masukkan path aplikasi (contoh: /var/www/myapp): " app_path
+    read -p "Web server yang digunakan (apache/nginx): " web_server
+    read -p "Apakah menggunakan PHP? (y/n): " use_php
+    read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl
+
+    mkdir -p $app_path
+    chown -R www-data:www-data $app_path
+    chmod -R 755 $app_path
+
+    if [ "$web_server" = "nginx" ]; then
+        if [ "$use_ssl" = "y" ]; then
+            # Install certbot untuk SSL
+            apt install -y certbot python3-certbot-nginx > /dev/null 2>&1
+        fi
+
+        cat > /etc/nginx/sites-available/$domain_name <<EOL
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${domain_name};
+    root ${app_path};
+    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+EOL
+
+   if [ "$use_php" = "y" ]; then
+        cat >> /etc/nginx/sites-available/$domain_name <<EOL
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+EOL
+    fi
+
+    cat >> /etc/nginx/sites-available/$domain_name <<EOL
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOL
+
+        ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
+        systemctl restart nginx
+
+        if [ "$use_ssl" = "y" ]; then
+            certbot --nginx -d $domain_name --non-interactive --agree-tos --email webmaster@$domain_name
+        fi
+
+    elif [ "$web_server" = "apache" ]; then
+        if [ "$use_ssl" = "y" ]; then
+            # Install certbot untuk SSL
+            apt install -y certbot python3-certbot-apache > /dev/null 2>&1
+        fi
+
+        cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
+<VirtualHost *:80>
+    ServerName ${domain_name}
+    DocumentRoot ${app_path}
+
+    <Directory ${app_path}>
         Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
@@ -202,106 +397,130 @@ EOL
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
 </VirtualHost>
 EOL
+
         a2ensite ${domain_name}
         systemctl restart apache2
+
+        if [ "$use_ssl" = "y" ]; then
+            certbot --apache -d $domain_name --non-interactive --agree-tos --email webmaster@$domain_name
+        fi
     fi
 
-    echo "✅ phpMyAdmin berhasil diinstall dan dapat diakses di http://${domain_name}/${pma_alias}!"
-}
-
-# Fungsi untuk menginstal Node.js & npm
-install_nodejs() {
-    check_and_install_package curl
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-    apt update && apt install -y nodejs
-    npm install -g npm@latest
-    echo "✅ Node.js dan npm berhasil diinstall!"
-}
-
-# Fungsi untuk menginstal FrankenPHP
-install_frankenphp() {
-    check_and_install_package curl
-    curl -sSL https://deb.frankenphp.dev/frankenphp.asc | gpg --dearmor -o /usr/share/keyrings/frankenphp-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list
-    apt update && check_and_install_package frankenphp
-    echo "✅ FrankenPHP berhasil diinstall!"
-}
-
-# Fungsi untuk konfigurasi aplikasi web
-configure_webapp() {
-    read -p "Masukkan domain aplikasi web: " domain_name
-    read -p "Masukkan path aplikasi (contoh: /var/www/myapp): " app_path
-    read -p "Web server yang digunakan (apache/nginx): " web_server
-
-    mkdir -p $app_path
-
-    if [ "$web_server" = "nginx" ]; then
-        ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
-        systemctl restart nginx
-
-    elif [ "$web_server" = "apache" ]; then
-        a2ensite $domain_name
-        systemctl restart apache2
+    log_info "Konfigurasi aplikasi web selesai!"
+    if [ "$use_ssl" = "y" ]; then
+        log_info "SSL telah dikonfigurasi untuk $domain_name"
     fi
-
-    echo "✅ Konfigurasi aplikasi web selesai!"
 }
-
 
 # Fungsi untuk mengonfigurasi PHP
 configure_php() {
-    if ! command -v php &> /dev/null; then
-        echo "❌ PHP belum diinstall! Silakan install PHP terlebih dahulu."
-        return
+    local php_version=$1
+    if [ -z "$php_version" ]; then
+        php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
     fi
-
-    php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    
     php_ini_file="/etc/php/${php_version}/fpm/php.ini"
+    php_fpm_file="/etc/php/${php_version}/fpm/pool.d/www.conf"
 
     if [ ! -f "$php_ini_file" ]; then
-        echo "❌ File php.ini tidak ditemukan di $php_ini_file"
+        log_error "File php.ini tidak ditemukan di $php_ini_file"
         return
     fi
 
-    echo "🔧 Konfigurasi PHP ($php_ini_file)"
+    log_info "Mengkonfigurasi PHP $php_version..."
 
-    sed -i "s/^memory_limit = .*/memory_limit = 256M/" $php_ini_file
-    sed -i "s/^upload_max_filesize = .*/upload_max_filesize = 50M/" $php_ini_file
-    sed -i "s/^post_max_size = .*/post_max_size = 50M/" $php_ini_file
-    sed -i "s/^display_errors = .*/display_errors = On/" $php_ini_file
-    sed -i "s/^error_reporting = .*/error_reporting = E_ALL/" $php_ini_file
-    sed -i "s|^;date.timezone =.*|date.timezone = Europe/Paris|" $php_ini_file
+    # Backup file konfigurasi asli
+    cp $php_ini_file "${php_ini_file}.backup"
+    cp $php_fpm_file "${php_fpm_file}.backup"
 
+    # Konfigurasi php.ini
+    sed -i 's/^memory_limit = .*/memory_limit = 256M/' $php_ini_file
+    sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' $php_ini_file
+    sed -i 's/^post_max_size = .*/post_max_size = 64M/' $php_ini_file
+    sed -i 's/^max_execution_time = .*/max_execution_time = 300/' $php_ini_file
+    sed -i 's/^max_input_time = .*/max_input_time = 300/' $php_ini_file
+    sed -i 's/^;date.timezone =.*/date.timezone = Asia\/Jakarta/' $php_ini_file
+
+    # Konfigurasi PHP-FPM
+    sed -i 's/^;emergency_restart_threshold = .*/emergency_restart_threshold = 10/' $php_fpm_file
+    sed -i 's/^;emergency_restart_interval = .*/emergency_restart_interval = 1m/' $php_fpm_file
+    sed -i 's/^;process_control_timeout = .*/process_control_timeout = 10s/' $php_fpm_file
+    sed -i 's/^pm = .*/pm = dynamic/' $php_fpm_file
+    sed -i 's/^pm.max_children = .*/pm.max_children = 50/' $php_fpm_file
+    sed -i 's/^pm.start_servers = .*/pm.start_servers = 5/' $php_fpm_file
+    sed -i 's/^pm.min_spare_servers = .*/pm.min_spare_servers = 5/' $php_fpm_file
+    sed -i 's/^pm.max_spare_servers = .*/pm.max_spare_servers = 35/' $php_fpm_file
+
+    # Restart PHP-FPM
     systemctl restart php${php_version}-fpm
-    echo "✅ Konfigurasi PHP berhasil diperbarui!"
+
+    log_info "Konfigurasi PHP selesai!"
+    log_info "Backup file tersimpan di ${php_ini_file}.backup dan ${php_fpm_file}.backup"
+}
+
+# Fungsi untuk menampilkan sistem info
+show_system_info() {
+    log_info "=== Informasi Sistem ==="
+    echo "OS: $(lsb_release -ds)"
+    echo "Kernel: $(uname -r)"
+    echo "CPU: $(grep "model name" /proc/cpuinfo | head -n1 | cut -d: -f2)"
+    echo "RAM: $(free -h | awk '/^Mem:/ {print $2}')"
+    echo "Disk: $(df -h / | awk 'NR==2 {print $2}')"
+    
+    if command -v php > /dev/null; then
+        echo "PHP Version: $(php -v | head -n1)"
+    fi
+    
+    if command -v mysql > /dev/null; then
+        echo "MySQL Version: $(mysql --version)"
+    fi
+    
+    if command -v nginx > /dev/null; then
+        echo "Nginx Version: $(nginx -v 2>&1)"
+    elif command -v apache2 > /dev/null; then
+        echo "Apache Version: $(apache2 -v | head -n1)"
+    fi
+    
+    if command -v node > /dev/null; then
+        echo "Node.js Version: $(node -v)"
+        echo "NPM Version: $(npm -v)"
+    fi
 }
 
 # Menu utama
 while true; do
-    echo "=== Auto Setup VPS Menu ==="
+    clear
+    echo "=============================="
+    echo "     Auto Setup VPS Menu     "
+    echo "=============================="
     echo "1. Install PHP"
     echo "2. Install Web Server"
     echo "3. Install Database"
     echo "4. Install phpMyAdmin"
-    echo "5. Install Node.js & npm (BELUM TERSEDIA)"
-    echo "6. Install FrankenPHP (BELUM TERSEDIA)"
-    echo "7. Konfigurasi Aplikasi Web (BELUM TERSEDIA)"
+    echo "5. Install Node.js & npm"
+    echo "6. Install FrankenPHP"
+    echo "7. Konfigurasi Aplikasi Web"
     echo "8. Konfigurasi PHP"
-    echo "9. Keluar"
-    read -p "Pilihan [1-9]: " choice
+    echo "9. Tampilkan Informasi Sistem"
+    echo "0. Keluar"
+    echo "=============================="
+    read -p "Pilihan [0-9]: " choice
 
     case $choice in
         1) install_php ;;
         2) install_webserver ;;
         3) install_database ;;
-        4) echo "🚀 Installasi phpMyAdmin belum tersedia!" ;;
-        5) echo "🚀 Installasi Node.js belum tersedia!" ;;
-        6) echo "🚀 Installasi FrankenPHP belum tersedia!" ;;
-        7) echo "🚀 Konfigurasi Aplikasi Web belum tersedia!" ;;
+        4) install_phpmyadmin ;;
+        5) install_nodejs ;;
+        6) install_frankenphp ;;
+        7) configure_webapp ;;
         8) configure_php ;;
-        9) echo "Terima kasih!"; exit 0 ;;
-        *) echo "Pilihan tidak valid" ;;
+        9) show_system_info ;;
+        0) log_info "Terima kasih telah menggunakan script ini!"
+           exit 0 ;;
+        *) log_error "Pilihan tidak valid" ;;
     esac
 
+    echo
     read -p "Tekan Enter untuk melanjutkan..."
 done
