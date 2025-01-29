@@ -443,34 +443,36 @@ EOF
     fi
 }
 
-# Fungsi 7: Konfigurasi Aplikasi Web
+# Fungsi 7: Konfigurasi Aplikasi Web dengan Laravel Support
 configure_webapp() {
-    read -p "Masukkan domain aplikasi web: " domain_name
-    read -p "Masukkan path aplikasi (contoh: /var/www/myapp): " app_path
+    read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
     read -p "Web server yang digunakan (apache/nginx): " web_server
+    read -p "Apakah aplikasi menggunakan Laravel? (y/n): " use_laravel
     read -p "Apakah menggunakan PHP? (y/n): " use_php
-    read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl
+    read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl"
+
+    # Set path root aplikasi
+    if [ "$use_laravel" = "y" ]; then
+        app_path="/var/www/html/${app_name}/public"
+        log_info "Laravel terdeteksi, root diatur ke: $app_path"
+    else
+        app_path="/var/www/html/${app_name}"
+    fi
 
     mkdir -p "$app_path"
-    chown -R www-data:www-data "$app_path"
-    chmod -R 755 "$app_path"
+    chown -R www-data:www-data "/var/www/html/${app_name}"
+    chmod -R 755 "/var/www/html/${app_name}"
 
     case "$web_server" in
         nginx)
-            log_info "Membuat konfigurasi Nginx..."
-            
+            log_info "Membuat konfigurasi Nginx untuk ${app_name}..."
+
             nginx_conf="server {
     listen 80;
-    listen [::]:80;
-    server_name ${domain_name};
-
-    # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{\"scheme\":\"https\"}') {
-        return 301 https://\$server_name\$request_uri;
-    }
+    server_name ${app_name}.domain.com;
 
     root ${app_path};
-    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
+    index index.php index.html index.htm;
 
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
@@ -499,7 +501,7 @@ configure_webapp() {
     real_ip_header CF-Connecting-IP;
 
     location / {
-        try_files \$uri \$uri/ /index.php?\$args;
+        try_files \$uri \$uri/ /index.php?\$query_string;
     }"
 
             if [ "$use_php" = "y" ]; then
@@ -520,31 +522,52 @@ configure_webapp() {
     }
 }"
 
-            echo "$nginx_conf" > "/etc/nginx/sites-available/$domain_name"
-            ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
+            echo "$nginx_conf" > "/etc/nginx/sites-available/${app_name}.domain.com"
+            ln -sf "/etc/nginx/sites-available/${app_name}.domain.com" "/etc/nginx/sites-enabled/"
             nginx -t && systemctl restart nginx
+            log_info "Konfigurasi Nginx untuk ${app_name}.domain.com selesai!"
             ;;
 
         apache)
-            log_info "Membuat konfigurasi Apache..."
-            
+            log_info "Membuat konfigurasi Apache untuk ${app_name}..."
+
             apache_conf="<VirtualHost *:80>
-    ServerName ${domain_name}
+    ServerName ${app_name}.domain.com
     DocumentRoot ${app_path}
 
     <Directory ${app_path}>
         Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
+    </Directory>"
+
+            if [ "$use_laravel" = "y" ]; then
+                apache_conf="${apache_conf}
+
+    <Directory /var/www/html/${app_name}>
+        AllowOverride All
     </Directory>
 
-    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+    <FilesMatch \.php$>
+        SetHandler \"proxy:unix:/run/php/php${selected_php_version}-fpm.sock|fcgi://localhost/\"
+    </FilesMatch>
+
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]"
+            fi
+
+            apache_conf="${apache_conf}
+
+    ErrorLog \${APACHE_LOG_DIR}/${app_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${app_name}_access.log combined
 </VirtualHost>"
 
-            echo "$apache_conf" > "/etc/apache2/sites-available/${domain_name}.conf"
-            a2ensite "${domain_name}"
+            echo "$apache_conf" > "/etc/apache2/sites-available/${app_name}.domain.com.conf"
+            a2ensite "${app_name}.domain.com"
             apache2ctl configtest && systemctl restart apache2
+            log_info "Konfigurasi Apache untuk ${app_name}.domain.com selesai!"
             ;;
             
         *)
@@ -555,9 +578,10 @@ configure_webapp() {
 
     log_info "Konfigurasi aplikasi web selesai!"
     if [ "$use_ssl" = "y" ]; then
-        log_info "SSL telah dikonfigurasi untuk $domain_name"
+        log_info "SSL telah dikonfigurasi untuk ${app_name}.domain.com"
     fi
 }
+
 
 # Fungsi 8: Konfigurasi PHP
 configure_php() {
