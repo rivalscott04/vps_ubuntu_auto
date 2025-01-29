@@ -81,6 +81,24 @@ add_php_repository() {
     add_ppa_if_needed "ondrej/php"
 }
 
+# Fungsi untuk mengkonfigurasi MySQL user baru
+configure_mysql_user() {
+    log_info "Konfigurasi user MySQL baru..."
+    read -p "Masukkan username MySQL baru: " mysql_user
+    read -s -p "Masukkan password untuk user $mysql_user: " mysql_pass
+    echo
+
+    mysql -e "CREATE USER '${mysql_user}'@'localhost' IDENTIFIED BY '${mysql_pass}';"
+    mysql -e "GRANT ALL PRIVILEGES ON *.* TO '${mysql_user}'@'localhost' WITH GRANT OPTION;"
+    mysql -e "FLUSH PRIVILEGES;"
+    
+    if [ $? -eq 0 ]; then
+        log_info "User MySQL ${mysql_user} berhasil dibuat dengan full privileges!"
+    else
+        log_error "Gagal membuat user MySQL"
+    fi
+}
+
 # Fungsi untuk menginstal PHP
 install_php() {
     add_webserver_ppa
@@ -117,6 +135,9 @@ install_php() {
     else
         log_error "Gagal menginstal PHP ${php_version}"
     fi
+
+    # Export PHP version untuk digunakan di fungsi lain
+    export selected_php_version=${php_version}
 }
 
 # Fungsi untuk menginstal Web Server
@@ -158,6 +179,7 @@ install_database() {
         1) log_info "Menginstal MySQL..."
            apt install -y mysql-server > /dev/null 2>&1
            mysql_secure_installation
+           configure_mysql_user
            log_info "MySQL berhasil diinstall!"
            ;;
         2) log_info "Menginstal PostgreSQL..."
@@ -167,6 +189,7 @@ install_database() {
         3) log_info "Menginstal MariaDB..."
            apt install -y mariadb-server > /dev/null 2>&1
            mysql_secure_installation
+           configure_mysql_user
            log_info "MariaDB berhasil diinstall!"
            ;;
         *) log_error "Pilihan tidak valid" ;;
@@ -204,8 +227,39 @@ server {
     listen [::]:80;
     server_name ${domain_name};
 
+    # Redirect HTTP to HTTPS if not coming from Cloudflare
+    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
+        return 301 https://\$server_name\$request_uri;
+    }
+
     root ${pma_path};
     index index.php index.html index.htm;
+
+    # Cloudflare SSL configuration
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    
+    real_ip_header CF-Connecting-IP;
 
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
@@ -213,7 +267,7 @@ server {
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }
@@ -333,29 +387,57 @@ configure_webapp() {
     chmod -R 755 $app_path
 
     if [ "$web_server" = "nginx" ]; then
-        if [ "$use_ssl" = "y" ]; then
-            # Install certbot untuk SSL
-            apt install -y certbot python3-certbot-nginx > /dev/null 2>&1
-        fi
-
         cat > /etc/nginx/sites-available/$domain_name <<EOL
 server {
     listen 80;
     listen [::]:80;
     server_name ${domain_name};
+
+    # Redirect HTTP to HTTPS if not coming from Cloudflare
+    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
+        return 301 https://\$server_name\$request_uri;
+    }
+
     root ${app_path};
     index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
 
+    # Cloudflare SSL configuration
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    
+    real_ip_header CF-Connecting-IP;
+
     location / {
-        try_files \$uri \$uri/ =404;
+        try_files \$uri \$uri/ /index.php?\$args;
     }
+
 EOL
 
-   if [ "$use_php" = "y" ]; then
+    if [ "$use_php" = "y" ]; then
         cat >> /etc/nginx/sites-available/$domain_name <<EOL
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }
@@ -372,16 +454,7 @@ EOL
         ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
         systemctl restart nginx
 
-        if [ "$use_ssl" = "y" ]; then
-            certbot --nginx -d $domain_name --non-interactive --agree-tos --email webmaster@$domain_name
-        fi
-
     elif [ "$web_server" = "apache" ]; then
-        if [ "$use_ssl" = "y" ]; then
-            # Install certbot untuk SSL
-            apt install -y certbot python3-certbot-apache > /dev/null 2>&1
-        fi
-
         cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
 <VirtualHost *:80>
     ServerName ${domain_name}
@@ -400,10 +473,6 @@ EOL
 
         a2ensite ${domain_name}
         systemctl restart apache2
-
-        if [ "$use_ssl" = "y" ]; then
-            certbot --apache -d $domain_name --non-interactive --agree-tos --email webmaster@$domain_name
-        fi
     fi
 
     log_info "Konfigurasi aplikasi web selesai!"
@@ -425,7 +494,7 @@ configure_php() {
     if [ ! -f "$php_ini_file" ]; then
         log_error "File php.ini tidak ditemukan di $php_ini_file"
         return
-    fi
+    }
 
     log_info "Mengkonfigurasi PHP $php_version..."
 
