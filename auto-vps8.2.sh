@@ -387,10 +387,15 @@ configure_webapp() {
     chmod -R 755 $app_path
 
     if [ "$web_server" = "nginx" ]; then
-        cat > /etc/nginx/sites-available/$domain_name <<EOL
+        # Tulis konfigurasi Nginx dasar
+        cat > /etc/nginx/sites-available/$domain_name << 'EOL'
 server {
     listen 80;
     listen [::]:80;
+EOL
+
+        # Tambahkan konfigurasi server_name dan redirect
+        cat >> /etc/nginx/sites-available/$domain_name << EOL
     server_name ${domain_name};
 
     # Redirect HTTP to HTTPS if not coming from Cloudflare
@@ -400,7 +405,10 @@ server {
 
     root ${app_path};
     index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
+EOL
 
+        # Tambahkan konfigurasi Cloudflare
+        cat >> /etc/nginx/sites-available/$domain_name << 'EOL'
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
     set_real_ip_from 103.21.244.0/22;
@@ -428,12 +436,13 @@ server {
     real_ip_header CF-Connecting-IP;
 
     location / {
-        try_files \$uri \$uri/ /index.php?\$args;
+        try_files $uri $uri/ /index.php?$args;
     }
 EOL
 
-    if [ "$use_php" = "y" ]; then
-        cat >> /etc/nginx/sites-available/$domain_name <<EOL
+        # Tambahkan konfigurasi PHP jika diperlukan
+        if [ "$use_php" = "y" ]; then
+            cat >> /etc/nginx/sites-available/$domain_name << EOL
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
@@ -441,9 +450,10 @@ EOL
         include fastcgi_params;
     }
 EOL
-    fi
+        fi
 
-    cat >> /etc/nginx/sites-available/$domain_name <<EOL
+        # Tambahkan konfigurasi .htaccess dan tutup server block
+        cat >> /etc/nginx/sites-available/$domain_name << 'EOL'
     location ~ /\.ht {
         deny all;
     }
