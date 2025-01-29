@@ -205,7 +205,8 @@ install_phpmyadmin() {
     read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
     read -p "Web server yang digunakan (apache/nginx): " web_server
 
-    pma_path="/var/www/${pma_alias}"
+    # Mengubah path ke /var/www/html
+    pma_path="/var/www/html/${pma_alias}"
     mkdir -p "${pma_path}"
 
     log_info "Mengunduh phpMyAdmin..."
@@ -268,6 +269,11 @@ EOL
     
     real_ip_header CF-Connecting-IP;
 
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Content-Type-Options "nosniff";
+
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
@@ -277,27 +283,35 @@ EOL
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
+        
+        # Security for phpMyAdmin
+        fastcgi_intercept_errors on;
+        fastcgi_read_timeout 300;
     }
 
     location ~ /\.ht {
         deny all;
     }
+    
+    # Deny access to specific phpMyAdmin files
+    location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
+        deny all;
+    }
 }
 EOL
-        # Buat symlink jika belum ada
-        if [ -f "/etc/nginx/sites-available/${domain_name}" ]; then
-            ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
-            
-            # Test konfigurasi nginx sebelum restart
-            if nginx -t; then
-                systemctl restart nginx
-                log_info "Konfigurasi Nginx berhasil diterapkan"
-            else
-                log_error "Konfigurasi Nginx tidak valid"
-                return 1
-            fi
+
+        # Hapus symlink yang mungkin sudah ada
+        rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        
+        # Buat symlink baru
+        ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+        
+        # Test konfigurasi nginx sebelum restart
+        if nginx -t; then
+            systemctl restart nginx
+            log_info "Konfigurasi Nginx berhasil diterapkan"
         else
-            log_error "File konfigurasi Nginx tidak berhasil dibuat"
+            log_error "Konfigurasi Nginx tidak valid"
             return 1
         fi
 
@@ -312,15 +326,44 @@ EOL
         Options FollowSymLinks
         AllowOverride All
         Require all granted
+        
+        # Additional security for phpMyAdmin
+        <IfModule mod_php.c>
+            php_admin_value upload_max_filesize 64M
+            php_admin_value max_execution_time 300
+            php_admin_value max_input_time 300
+            php_admin_value memory_limit 256M
+            php_admin_value post_max_size 64M
+        </IfModule>
     </Directory>
+
+    # Security headers
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set X-Content-Type-Options "nosniff"
 
     ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
 </VirtualHost>
 EOL
 
+        # Aktifkan modul headers jika belum aktif
+        a2enmod headers > /dev/null 2>&1
+        
+        # Hapus konfigurasi lama jika ada
+        a2dissite "${domain_name}" > /dev/null 2>&1
+        
+        # Aktifkan konfigurasi baru
         a2ensite "${domain_name}" > /dev/null 2>&1
-        systemctl restart apache2
+        
+        # Test konfigurasi Apache sebelum restart
+        if apache2ctl configtest; then
+            systemctl restart apache2
+            log_info "Konfigurasi Apache berhasil diterapkan"
+        else
+            log_error "Konfigurasi Apache tidak valid"
+            return 1
+        fi
     else
         log_error "Web server tidak valid"
         return 1
@@ -333,6 +376,7 @@ EOL
     log_info "phpMyAdmin berhasil diinstall!"
     log_info "Akses phpMyAdmin di: http://${domain_name}"
 }
+
 # Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js..."
