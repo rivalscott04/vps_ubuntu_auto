@@ -100,7 +100,7 @@ install_php() {
     esac
 
     log_info "Menginstal PHP ${selected_php_version} dan ekstensi..."
-    
+
     apt install -y php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
                    php${selected_php_version}-common php${selected_php_version}-mysql php${selected_php_version}-zip \
                    php${selected_php_version}-gd php${selected_php_version}-mbstring php${selected_php_version}-curl \
@@ -165,136 +165,183 @@ install_database() {
                 log_info "Menginstal MariaDB..."
                 apt install -y mariadb-server > /dev/null 2>&1
             fi
-            
+
             mysql_secure_installation
-            
+
             echo "Pilih opsi manajemen user:"
             echo "1. Buat user baru (root tetap ada)"
             echo "2. Hapus root dan buat user baru"
             read -p "Pilihan [1-2]: " user_choice
-            
+
             case $user_choice in
                 1) configure_mysql_user ;;
                 2) mysql_change_root ;;
                 *) log_error "Pilihan tidak valid" ;;
             esac
-            
+
             if [ "$db_choice" = "1" ]; then
                 log_info "MySQL berhasil diinstall!"
             else
                 log_info "MariaDB berhasil diinstall!"
             fi
             ;;
-            
+
         2) log_info "Menginstal PostgreSQL..."
            apt install -y postgresql postgresql-contrib > /dev/null 2>&1
            log_info "PostgreSQL berhasil diinstall!"
            ;;
-           
+
         *) log_error "Pilihan tidak valid" ;;
     esac
 }
 
-# Fungsi untuk menginstal phpMyAdmin sebagai subfolder
+# Fungsi untuk menginstal phpMyAdmin
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
     check_and_install_package wget
 
-    read -p "Masukkan domain (contoh: domain.com): " domain_name
+    read -p "Masukkan domain untuk phpMyAdmin (contoh: pma.domain.com): " domain_name
+    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
     read -p "Web server yang digunakan (apache/nginx): " web_server
-    read -p "Masukkan versi PHP (contoh: 7.4): " php_version
 
-    # Set lokasi instalasi phpMyAdmin
-    pma_path="/var/www/html/_pma"
+    pma_path="/var/www/${pma_alias}"
+    # Mengubah path ke /var/www/html
+    pma_path="/var/www/html/${pma_alias}"
     mkdir -p "${pma_path}"
 
-    # Download dan extract phpMyAdmin
     log_info "Mengunduh phpMyAdmin..."
-    wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
-    unzip -q /tmp/phpmyadmin.zip -d /tmp/
-    mv /tmp/phpMyAdmin-*-all-languages/* "${pma_path}/"
-    rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
-
-    # Konfigurasi phpMyAdmin
-    blowfish_secret=$(openssl rand -base64 32)
-    cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
-    sed -i "s|cfg
-
-\['blowfish_secret'\]
-
- = ''|cfg
-
-\['blowfish_secret'\]
-
- = '${blowfish_secret}'|" "${pma_path}/config.inc.php"
-
-    if [ "$web_server" = "nginx" ]; then
-        # Konfigurasi untuk Nginx
-        config_file="/etc/nginx/conf.d/phpmyadmin.conf"
+@@ -268,6 +269,11 @@
+    
+    real_ip_header CF-Connecting-IP;
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN";
+    add_header X-XSS-Protection "1; mode=block";
+    add_header X-Content-Type-Options "nosniff";
+    location / {
+        try_files \$uri \$uri/ /index.php?\$args;
+    }
+@@ -277,27 +283,35 @@
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
         
-        cat > "$config_file" << EOF
-# phpMyAdmin Configuration
-server {
-    listen 80;
-    server_name ${domain_name};
-    root /var/www/html;
-
-    location /_pma {
-        alias /var/www/html/_pma;
-        index index.php;
-        
-        location ~ ^/_pma/.+\\.php$ {
-            alias /var/www/html/_pma;
-            fastcgi_pass unix:/var/run/php/php${php_version}-fpm.sock;
-            include fastcgi_params;
-            fastcgi_param SCRIPT_FILENAME \$request_filename;
-        }
-        
-        location ~ /\\.ht {
-            deny all;
-        }
+        # Security for phpMyAdmin
+        fastcgi_intercept_errors on;
+        fastcgi_read_timeout 300;
+    }
+    location ~ /\.ht {
+        deny all;
+    }
+    
+    # Deny access to specific phpMyAdmin files
+    location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
+        deny all;
     }
 }
-EOF
-        nginx -t && systemctl restart nginx
-
-    elif [ "$web_server" = "apache" ]; then
-        # Konfigurasi untuk Apache
-        config_file="/etc/apache2/conf-available/phpmyadmin.conf"
+EOL
+        # Buat symlink jika belum ada
+        if [ -f "/etc/nginx/sites-available/${domain_name}" ]; then
+            ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+            
+            # Test konfigurasi nginx sebelum restart
+            if nginx -t; then
+                systemctl restart nginx
+                log_info "Konfigurasi Nginx berhasil diterapkan"
+            else
+                log_error "Konfigurasi Nginx tidak valid"
+                return 1
+            fi
+        # Hapus symlink yang mungkin sudah ada
+        rm -f "/etc/nginx/sites-enabled/${domain_name}"
         
-        cat > "$config_file" << EOF
-Alias /_pma /var/www/html/_pma
+        # Buat symlink baru
+        ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+        
+        # Test konfigurasi nginx sebelum restart
+        if nginx -t; then
+            systemctl restart nginx
+            log_info "Konfigurasi Nginx berhasil diterapkan"
+        else
+            log_error "File konfigurasi Nginx tidak berhasil dibuat"
+            log_error "Konfigurasi Nginx tidak valid"
+            return 1
+        fi
 
-<Directory /var/www/html/_pma>
-    Options FollowSymLinks
-    AllowOverride All
-    Require all granted
-    
-    <IfModule mod_php.c>
-        php_value upload_max_filesize 64M
-        php_value max_execution_time 300
-        php_value max_input_time 300
-        php_value memory_limit 256M
-        php_value post_max_size 64M
-    </IfModule>
-</Directory>
-EOF
-        a2enconf phpmyadmin
+@@ -312,15 +326,44 @@
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+        
+        # Additional security for phpMyAdmin
+        <IfModule mod_php.c>
+            php_admin_value upload_max_filesize 64M
+            php_admin_value max_execution_time 300
+            php_admin_value max_input_time 300
+            php_admin_value memory_limit 256M
+            php_admin_value post_max_size 64M
+        </IfModule>
+    </Directory>
+    # Security headers
+    Header set X-Frame-Options "SAMEORIGIN"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set X-Content-Type-Options "nosniff"
+    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+</VirtualHost>
+EOL
+
+        # Aktifkan modul headers jika belum aktif
+        a2enmod headers > /dev/null 2>&1
+        
+        # Hapus konfigurasi lama jika ada
+        a2dissite "${domain_name}" > /dev/null 2>&1
+        
+        # Aktifkan konfigurasi baru
+        a2ensite "${domain_name}" > /dev/null 2>&1
         systemctl restart apache2
-    fi
-
-    # Set permissions
-    chown -R www-data:www-data "${pma_path}"
-    chmod -R 755 "${pma_path}"
-
+        
+        # Test konfigurasi Apache sebelum restart
+        if apache2ctl configtest; then
+            systemctl restart apache2
+            log_info "Konfigurasi Apache berhasil diterapkan"
+        else
+            log_error "Konfigurasi Apache tidak valid"
+            return 1
+        fi
+    else
+        log_error "Web server tidak valid"
+        return 1
+@@ -333,341 +376,342 @@
     log_info "phpMyAdmin berhasil diinstall!"
-    log_info "Akses phpMyAdmin di: http://${domain_name}/_pma"
-    log_info "Path instalasi: ${pma_path}"
+    log_info "Akses phpMyAdmin di: http://${domain_name}"
 }
+# Fungsi 5: Instalasi Node.js & npm
+install_nodejs() {
+    log_info "Mempersiapkan instalasi Node.js..."
+    check_and_install_package curl
 
-install_phpmyadmin
+    # Tambahkan repository Node.js
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
 
+    log_info "Menginstal Node.js dan npm..."
+    apt install -y nodejs > /dev/null 2>&1
+
+    # Update npm ke versi terbaru
+    npm install -g npm@latest > /dev/null 2>&1
+
+    # Install beberapa package global yang umum digunakan
+    log_info "Menginstal package global..."
+    npm install -g pm2 yarn > /dev/null 2>&1
+
+    if command -v node > /dev/null; then
+        node_version=$(node -v)
+        npm_version=$(npm -v)
+        log_info "Node.js ${node_version} dan npm ${npm_version} berhasil diinstall!"
+    else
+        log_error "Gagal menginstal Node.js"
+    fi
+}
 
 # Fungsi 6: Instalasi FrankenPHP
 install_frankenphp() {
@@ -317,13 +364,11 @@ install_frankenphp() {
 [Unit]
 Description=FrankenPHP Application Server
 After=network.target
-
 [Service]
 Type=simple
 User=www-data
 ExecStart=/usr/local/bin/frankenphp run --config /etc/frankenphp/Caddyfile
 Restart=always
-
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -350,20 +395,17 @@ configure_webapp() {
     case "$web_server" in
         nginx)
             log_info "Membuat konfigurasi Nginx..."
-            
+
             nginx_conf="server {
     listen 80;
     listen [::]:80;
     server_name ${domain_name};
-
     # Redirect HTTP to HTTPS if not coming from Cloudflare
     if (\$http_cf_visitor !~ '{\"scheme\":\"https\"}') {
         return 301 https://\$server_name\$request_uri;
     }
-
     root ${app_path};
     index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
-
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
     set_real_ip_from 103.21.244.0/22;
@@ -389,14 +431,12 @@ configure_webapp() {
     set_real_ip_from 2c0f:f248::/32;
     
     real_ip_header CF-Connecting-IP;
-
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }"
 
             if [ "$use_php" = "y" ]; then
                 nginx_conf="${nginx_conf}
-
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
@@ -406,7 +446,6 @@ configure_webapp() {
             fi
 
             nginx_conf="${nginx_conf}
-
     location ~ /\.ht {
         deny all;
     }
@@ -419,17 +458,15 @@ configure_webapp() {
 
         apache)
             log_info "Membuat konfigurasi Apache..."
-            
+
             apache_conf="<VirtualHost *:80>
     ServerName ${domain_name}
     DocumentRoot ${app_path}
-
     <Directory ${app_path}>
         Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
     </Directory>
-
     ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
 </VirtualHost>"
@@ -438,7 +475,7 @@ configure_webapp() {
             a2ensite "${domain_name}"
             apache2ctl configtest && systemctl restart apache2
             ;;
-            
+
         *)
             log_error "Web server tidak valid. Pilih 'apache' atau 'nginx'"
             return
@@ -457,7 +494,7 @@ configure_php() {
     if [ -z "$php_version" ]; then
         php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
     fi
-    
+
     php_ini_file="/etc/php/${php_version}/fpm/php.ini"
     php_fpm_file="/etc/php/${php_version}/fpm/pool.d/www.conf"
 
@@ -501,7 +538,7 @@ configure_php() {
 # Fungsi untuk menghapus root dan membuat user baru MySQL
 mysql_change_root() {
     log_info "Konfigurasi penggantian user root MySQL..."
-    
+
     # Input untuk user baru
     read -p "Masukkan username MySQL baru: " mysql_user
     read -s -p "Masukkan password untuk user $mysql_user: " mysql_pass
@@ -511,15 +548,15 @@ mysql_change_root() {
     mysql -e "CREATE USER '${mysql_user}'@'localhost' IDENTIFIED BY '${mysql_pass}';"
     mysql -e "GRANT ALL PRIVILEGES ON *.* TO '${mysql_user}'@'localhost' WITH GRANT OPTION;"
     mysql -e "FLUSH PRIVILEGES;"
-    
+
     if [ $? -eq 0 ]; then
         # Hapus user root
         mysql -e "DROP USER 'root'@'localhost';"
         mysql -e "FLUSH PRIVILEGES;"
-        
+
         if [ $? -eq 0 ]; then
             log_info "User root berhasil dihapus dan diganti dengan user ${mysql_user}"
-            
+
             # Buat file konfigurasi untuk user baru
             cat > ~/.my.cnf << EOL
 [client]
@@ -527,7 +564,7 @@ user=${mysql_user}
 password=${mysql_pass}
 EOL
             chmod 600 ~/.my.cnf
-            
+
             log_info "File konfigurasi MySQL telah dibuat di ~/.my.cnf"
         else
             log_error "Gagal menghapus user root"
@@ -547,21 +584,21 @@ show_system_info() {
     echo "CPU: $(grep "model name" /proc/cpuinfo | head -n1 | cut -d: -f2)"
     echo "RAM: $(free -h | awk '/^Mem:/ {print $2}')"
     echo "Disk: $(df -h / | awk 'NR==2 {print $2}')"
-    
+
     if command -v php > /dev/null; then
         echo "PHP Version: $(php -v | head -n1)"
     fi
-    
+
     if command -v mysql > /dev/null; then
         echo "MySQL Version: $(mysql --version)"
     fi
-    
+
     if command -v nginx > /dev/null; then
         echo "Nginx Version: $(nginx -v 2>&1)"
     elif command -v apache2 > /dev/null; then
         echo "Apache Version: $(apache2 -v | head -n1)"
     fi
-    
+
     if command -v node > /dev/null; then
         echo "Node.js Version: $(node -v)"
         echo "NPM Version: $(npm -v)"
