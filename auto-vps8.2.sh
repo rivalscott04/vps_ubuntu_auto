@@ -195,19 +195,19 @@ install_database() {
     esac
 }
 
-# Fungsi untuk menginstal phpMyAdmin sebagai subfolder dengan konfigurasi SSL Cloudflare friendly
+# Fungsi untuk menginstal phpMyAdmin sebagai server block khusus (subdomain)
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
     check_and_install_package wget
 
     read -p "Masukkan domain utama (contoh: domain.com): " domain_name
-    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
+    read -p "Masukkan subdomain untuk phpMyAdmin (contoh: pma.domain.com): " pma_subdomain
     read -p "Web server yang digunakan (apache/nginx): " web_server
     read -p "Versi PHP yang digunakan (contoh: 8.2): " selected_php_version
 
-    # Set lokasi instalasi phpMyAdmin
-    pma_path="/var/www/${pma_alias}"
+    # Set lokasi instalasi phpMyAdmin di /var/www/html/pma
+    pma_path="/var/www/html/pma"
     mkdir -p "${pma_path}"
 
     # Download dan extract phpMyAdmin
@@ -223,89 +223,69 @@ install_phpmyadmin() {
     sed -i "s|\$cfg\['blowfish_secret'\] = ''|\$cfg\['blowfish_secret'\] = '${blowfish_secret}'|" "${pma_path}/config.inc.php"
 
     if [ "$web_server" = "nginx" ]; then
-        # Konfigurasi untuk Nginx agar tidak bentrok dengan Cloudflare SSL
-        config_file="/etc/nginx/sites-available/${domain_name}"
+        # Konfigurasi untuk Nginx sebagai subdomain
+        config_file="/etc/nginx/sites-available/${pma_subdomain}"
 
-        # Backup konfigurasi Nginx yang sudah ada
-        if [ -f "$config_file" ]; then
-            cp "$config_file" "${config_file}.backup"
-        fi
-
-        # Pastikan konfigurasi server ada
-        if ! grep -q "server_name ${domain_name};" "$config_file"; then
-            cat > "$config_file" << EOF
+        cat > "$config_file" << EOF
 server {
     listen 80;
-    server_name ${domain_name};
+    server_name ${pma_subdomain};
 
-    root /var/www/html;
+    root ${pma_path};
     index index.php index.html;
 
     location / {
         try_files \$uri \$uri/ =404;
     }
+
+    location ~ \.php\$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
 }
 EOF
-        fi
 
-        # Tambahkan konfigurasi phpMyAdmin ke file konfigurasi Nginx
-        cat >> "$config_file" << EOF
-
-# Konfigurasi phpMyAdmin
-location /${pma_alias} {
-    alias ${pma_path};
-    index index.php;
-    autoindex off;
-}
-
-location ~ ^/${pma_alias}/.+\.php$ {
-    alias ${pma_path};
-    include fastcgi_params;
-    fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-    fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-}
-
-location ~ /\.ht {
-    deny all;
-}
-EOF
-        # Test dan restart Nginx
+        ln -s "$config_file" /etc/nginx/sites-enabled/
         nginx -t && systemctl restart nginx
-        log_info "Konfigurasi Nginx untuk phpMyAdmin berhasil diterapkan!"
+        log_info "Konfigurasi Nginx untuk phpMyAdmin sebagai subdomain berhasil diterapkan!"
 
     elif [ "$web_server" = "apache" ]; then
-        # Konfigurasi untuk Apache agar tidak bentrok dengan Cloudflare SSL
-        config_file="/etc/apache2/sites-available/${domain_name}.conf"
+        # Konfigurasi untuk Apache sebagai VirtualHost baru
+        config_file="/etc/apache2/sites-available/${pma_subdomain}.conf"
 
-        # Backup konfigurasi Apache yang sudah ada
-        if [ -f "$config_file" ]; then
-            cp "$config_file" "${config_file}.backup"
-        fi
+        cat > "$config_file" << EOF
+<VirtualHost *:80>
+    ServerName ${pma_subdomain}
 
-        # Tambahkan konfigurasi phpMyAdmin ke file konfigurasi Apache
-        cat >> "$config_file" << EOF
+    DocumentRoot ${pma_path}
 
-# Konfigurasi phpMyAdmin
-Alias /${pma_alias} ${pma_path}
+    <Directory ${pma_path}>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
 
-<Directory ${pma_path}>
-    Options FollowSymLinks
-    AllowOverride All
-    Require all granted
+        <IfModule mod_php.c>
+            php_value upload_max_filesize 64M
+            php_value max_execution_time 300
+            php_value max_input_time 300
+            php_value memory_limit 256M
+            php_value post_max_size 64M
+        </IfModule>
+    </Directory>
 
-    <IfModule mod_php.c>
-        php_value upload_max_filesize 64M
-        php_value max_execution_time 300
-        php_value max_input_time 300
-        php_value memory_limit 256M
-        php_value post_max_size 64M
-    </IfModule>
-</Directory>
+    ErrorLog \${APACHE_LOG_DIR}/${pma_subdomain}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${pma_subdomain}_access.log combined
+</VirtualHost>
 EOF
-        # Aktifkan konfigurasi dan restart Apache
-        a2ensite "${domain_name}.conf"
+
+        a2ensite "${pma_subdomain}.conf"
         systemctl restart apache2
-        log_info "Konfigurasi Apache untuk phpMyAdmin berhasil diterapkan!"
+        log_info "Konfigurasi Apache untuk phpMyAdmin sebagai subdomain berhasil diterapkan!"
     fi
 
     # Set permissions
@@ -313,9 +293,10 @@ EOF
     chmod -R 755 "${pma_path}"
 
     log_info "phpMyAdmin berhasil diinstall!"
-    log_info "Akses phpMyAdmin di: https://${domain_name}/${pma_alias}"
+    log_info "Akses phpMyAdmin di: https://${pma_subdomain}"
     log_info "Path instalasi: ${pma_path}"
 }
+
 
 
 # Fungsi 6: Instalasi FrankenPHP
