@@ -92,6 +92,48 @@ install_php() {
     echo "✅ PHP ${php_version} berhasil diinstall!"
 }
 
+# Fungsi untuk menginstal Web Server
+install_webserver() {
+    echo "Pilih web server yang akan diinstall:"
+    echo "1. Apache"
+    echo "2. Nginx"
+    read -p "Pilihan [1-2]: " server_choice
+
+    case $server_choice in
+        1) apt install -y apache2
+           add_webserver_ppa
+           a2enmod rewrite
+           systemctl restart apache2
+           echo "✅ Apache terinstall!"
+           ;;
+        2) apt install -y nginx
+           add_webserver_ppa
+           systemctl restart nginx
+           echo "✅ Nginx terinstall!"
+           ;;
+        *) echo "Pilihan tidak valid" ;;
+    esac
+}
+
+# Fungsi untuk menginstal Database
+install_database() {
+    echo "Pilih database yang akan diinstall:"
+    echo "1. MySQL"
+    echo "2. PostgreSQL"
+    read -p "Pilihan [1-2]: " db_choice
+
+    case $db_choice in
+        1) apt install -y mysql-server
+           mysql_secure_installation
+           echo "✅ MySQL berhasil diinstall!"
+           ;;
+        2) apt install -y postgresql postgresql-contrib
+           echo "✅ PostgreSQL berhasil diinstall!"
+           ;;
+        *) echo "Pilihan tidak valid" ;;
+    esac
+}
+
 # Fungsi untuk mengonfigurasi PHP
 configure_php() {
     if ! command -v php &> /dev/null; then
@@ -108,43 +150,24 @@ configure_php() {
     fi
 
     echo "🔧 Konfigurasi PHP ($php_ini_file)"
-    
-    read -p "Masukkan batas memori (default: 256M): " memory_limit
-    memory_limit=${memory_limit:-256M}
 
-    read -p "Masukkan batas ukuran file upload (default: 50M): " upload_max_filesize
-    upload_max_filesize=${upload_max_filesize:-50M}
-
-    read -p "Masukkan batas ukuran post (default: 50M): " post_max_size
-    post_max_size=${post_max_size:-50M}
-
-    read -p "Aktifkan error reporting? (On/Off, default: On): " display_errors
-    display_errors=${display_errors:-On}
-
-    read -p "Pilih level error reporting (default: E_ALL): " error_reporting
-    error_reporting=${error_reporting:-E_ALL}
-
-    read -p "Masukkan zona waktu (contoh: Europe/Paris, default: UTC): " timezone
-    timezone=${timezone:-UTC}
-
-    sed -i "s/^memory_limit = .*/memory_limit = $memory_limit/" $php_ini_file
-    sed -i "s/^upload_max_filesize = .*/upload_max_filesize = $upload_max_filesize/" $php_ini_file
-    sed -i "s/^post_max_size = .*/post_max_size = $post_max_size/" $php_ini_file
-    sed -i "s/^display_errors = .*/display_errors = $display_errors/" $php_ini_file
-    sed -i "s/^error_reporting = .*/error_reporting = $error_reporting/" $php_ini_file
-    sed -i "s|^;date.timezone =.*|date.timezone = $timezone|" $php_ini_file
+    sed -i "s/^memory_limit = .*/memory_limit = 256M/" $php_ini_file
+    sed -i "s/^upload_max_filesize = .*/upload_max_filesize = 50M/" $php_ini_file
+    sed -i "s/^post_max_size = .*/post_max_size = 50M/" $php_ini_file
+    sed -i "s/^display_errors = .*/display_errors = On/" $php_ini_file
+    sed -i "s/^error_reporting = .*/error_reporting = E_ALL/" $php_ini_file
+    sed -i "s|^;date.timezone =.*|date.timezone = Europe/Paris|" $php_ini_file
 
     systemctl restart php${php_version}-fpm
-
     echo "✅ Konfigurasi PHP berhasil diperbarui!"
 }
 
 # Menu utama
 while true; do
     echo "=== Auto Setup VPS Menu ==="
-    echo "1. Install PHP (8.1-8.3)"
-    echo "2. Install Web Server (Apache/Nginx)"
-    echo "3. Install Database (MySQL/PostgreSQL)"
+    echo "1. Install PHP"
+    echo "2. Install Web Server"
+    echo "3. Install Database"
     echo "4. Install phpMyAdmin"
     echo "5. Install Node.js & npm (BELUM TERSEDIA)"
     echo "6. Install FrankenPHP (BELUM TERSEDIA)"
@@ -157,7 +180,7 @@ while true; do
         1) install_php ;;
         2) install_webserver ;;
         3) install_database ;;
-        4) install_phpmyadmin ;;
+        4) echo "🚀 Installasi phpMyAdmin belum tersedia!" ;;
         5) echo "🚀 Installasi Node.js belum tersedia!" ;;
         6) echo "🚀 Installasi FrankenPHP belum tersedia!" ;;
         7) echo "🚀 Konfigurasi Aplikasi Web belum tersedia!" ;;
