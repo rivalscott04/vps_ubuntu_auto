@@ -207,8 +207,9 @@ install_phpmyadmin() {
     # Set path PMA
     pma_path="_pma"
     pma_full_path="/var/www/html/${pma_path}"
-    # Gunakan nama domain untuk nama file konfigurasi, hapus karakter khusus
-    config_name=$(echo "${main_domain}" | sed 's/[^a-zA-Z0-9]/_/g')
+    
+    # Bersihkan nama file konfigurasi - hanya gunakan alphanumeric dan underscore
+    config_name="pma_${main_domain//[^a-zA-Z0-9]/_}"
 
     # Buat direktori jika belum ada
     mkdir -p "${pma_full_path}"
@@ -225,31 +226,32 @@ install_phpmyadmin() {
     sed -i "s|cfg\['blowfish_secret'\] = ''|cfg\['blowfish_secret'\] = '${blowfish_secret}'|" "${pma_full_path}/config.inc.php"
 
     if [ "$web_server" = "nginx" ]; then
-        # Pastikan direktori sites-available ada
+        # Pastikan direktori sites-available dan sites-enabled ada
         mkdir -p /etc/nginx/sites-available
         mkdir -p /etc/nginx/sites-enabled
 
-        # Buat nama file konfigurasi
+        # Set path file konfigurasi
         config_file="/etc/nginx/sites-available/${config_name}"
+        enabled_link="/etc/nginx/sites-enabled/${config_name}"
 
-        # Hapus konfigurasi dan symlink lama jika ada
-        rm -f "/etc/nginx/sites-enabled/${config_name}"
-        rm -f "${config_file}"
+        # Hapus file lama jika ada
+        rm -f "$enabled_link"
+        rm -f "$config_file"
 
-        # Buat konfigurasi Nginx
-        cat > "${config_file}" << EOF
+        # Buat konfigurasi baru
+        cat > "$config_file" << EOF
 server {
     listen 80;
     listen [::]:80;
     server_name ${main_domain};
 
+    root /var/www/html;
+    index index.php index.html index.htm;
+
     # Redirect HTTP to HTTPS if not coming from Cloudflare
     if (\$http_cf_visitor !~ '{"scheme":"https"}') {
         return 301 https://\$server_name\$request_uri;
     }
-
-    root /var/www/html;
-    index index.php index.html index.htm;
 
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
@@ -277,50 +279,49 @@ server {
     
     real_ip_header CF-Connecting-IP;
 
-    # Regular web root location
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
-
     # phpMyAdmin location
-    location /${pma_path}/ {
+    location /${pma_path} {
+        alias ${pma_full_path};
+        index index.php;
+
         # Security headers
         add_header X-Frame-Options "SAMEORIGIN";
         add_header X-XSS-Protection "1; mode=block";
         add_header X-Content-Type-Options "nosniff";
 
-        location ~ [^/]\.php(/|\$) {
-            fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
-            try_files \$fastcgi_script_name =404;
+        location ~ ^/${pma_path}/(.+\.php)$ {
+            alias ${pma_full_path}/\$1;
             fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
             fastcgi_index index.php;
             include fastcgi_params;
-            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-            fastcgi_param PATH_INFO \$fastcgi_path_info;
+            fastcgi_param SCRIPT_FILENAME \$request_filename;
             fastcgi_intercept_errors on;
             fastcgi_read_timeout 300;
         }
+    }
 
-        location ~ /\.ht {
-            deny all;
-        }
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location ~ /\.ht {
+        deny all;
     }
 }
 EOF
 
-        # Buat symlink baru
-        ln -sf "${config_file}" "/etc/nginx/sites-enabled/"
-        
-        # Test konfigurasi nginx sebelum restart
-        nginx -t && systemctl restart nginx
-        if [ $? -eq 0 ]; then
+        # Buat symlink dan restart Nginx
+        ln -sf "$config_file" "$enabled_link"
+
+        # Test dan restart Nginx
+        if nginx -t; then
+            systemctl restart nginx
             log_info "Konfigurasi Nginx berhasil diterapkan"
         else
             log_error "Konfigurasi Nginx tidak valid"
             return 1
         fi
 
-    # ... [bagian Apache tetap sama]
     fi
 
     # Set correct permissions
@@ -330,7 +331,6 @@ EOF
     log_info "phpMyAdmin berhasil diinstall!"
     log_info "Akses phpMyAdmin di: https://${main_domain}/${pma_path}"
 }
-
 # Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js..."
