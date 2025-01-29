@@ -201,11 +201,13 @@ install_phpmyadmin() {
     check_and_install_package unzip
     check_and_install_package wget
 
-    read -p "Masukkan domain (contoh: domain.com): " domain_name
+    read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
     read -p "Web server yang digunakan (apache/nginx): " web_server
+    read -p "Versi PHP yang digunakan (contoh: 8.2): " selected_php_version
 
     # Set lokasi instalasi phpMyAdmin
-    pma_path="/var/www/html/_pma"
+    pma_path="/var/www/${pma_alias}"
     mkdir -p "${pma_path}"
 
     # Download dan extract phpMyAdmin
@@ -222,41 +224,54 @@ install_phpmyadmin() {
 
     if [ "$web_server" = "nginx" ]; then
         # Konfigurasi untuk Nginx
-        config_file="/etc/nginx/conf.d/phpmyadmin.conf"
-        
-        cat > "$config_file" << EOF
-# phpMyAdmin Configuration
-location /_pma {
-    alias /var/www/html/_pma;
+        config_file="/etc/nginx/sites-available/${domain_name}"
+
+        # Backup konfigurasi Nginx yang sudah ada
+        if [ -f "$config_file" ]; then
+            cp "$config_file" "${config_file}.backup"
+        fi
+
+        # Tambahkan konfigurasi phpMyAdmin ke file konfigurasi Nginx
+        cat >> "$config_file" << EOF
+# Konfigurasi phpMyAdmin
+location /${pma_alias} {
+    alias ${pma_path};
     index index.php;
-    
-    location ~ ^/_pma/.+\.php$ {
-        alias /var/www/html/_pma;
+
+    location ~ ^/${pma_alias}/.+\.php$ {
+        alias ${pma_path};
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$request_filename;
     }
-    
-    location ~ /\.ht {
+
+    location ~ /${pma_alias}/\.ht {
         deny all;
     }
 }
 EOF
-        # Restart Nginx
+        # Test dan restart Nginx
         nginx -t && systemctl restart nginx
 
     elif [ "$web_server" = "apache" ]; then
         # Konfigurasi untuk Apache
-        config_file="/etc/apache2/conf-available/phpmyadmin.conf"
-        
-        cat > "$config_file" << EOF
-Alias /_pma /var/www/html/_pma
+        config_file="/etc/apache2/sites-available/${domain_name}.conf"
 
-<Directory /var/www/html/_pma>
+        # Backup konfigurasi Apache yang sudah ada
+        if [ -f "$config_file" ]; then
+            cp "$config_file" "${config_file}.backup"
+        fi
+
+        # Tambahkan konfigurasi phpMyAdmin ke file konfigurasi Apache
+        cat >> "$config_file" << EOF
+# Konfigurasi phpMyAdmin
+Alias /${pma_alias} ${pma_path}
+
+<Directory ${pma_path}>
     Options FollowSymLinks
     AllowOverride All
     Require all granted
-    
+
     <IfModule mod_php.c>
         php_value upload_max_filesize 64M
         php_value max_execution_time 300
@@ -266,8 +281,8 @@ Alias /_pma /var/www/html/_pma
     </IfModule>
 </Directory>
 EOF
-        # Aktifkan konfigurasi
-        a2enconf phpmyadmin
+        # Aktifkan konfigurasi dan restart Apache
+        a2ensite "${domain_name}.conf"
         systemctl restart apache2
     fi
 
@@ -276,10 +291,9 @@ EOF
     chmod -R 755 "${pma_path}"
 
     log_info "phpMyAdmin berhasil diinstall!"
-    log_info "Akses phpMyAdmin di: https://${domain_name}/_pma"
+    log_info "Akses phpMyAdmin di: https://${domain_name}/${pma_alias}"
     log_info "Path instalasi: ${pma_path}"
 }
-
 # Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js..."
