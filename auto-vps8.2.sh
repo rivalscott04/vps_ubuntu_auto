@@ -387,6 +387,80 @@ configure_webapp() {
     chmod -R 755 $app_path
 
     if [ "$web_server" = "nginx" ]; then
+        # Create Nginx configuration
+        cat > /etc/nginx/sites-available/$domain_name << 'EONG'
+server {
+    listen 80;
+    listen [::]:80;
+EONG
+
+        # Add dynamic content
+        cat >> /etc/nginx/sites-available/$domain_name << EONG
+    server_name ${domain_name};
+
+    # Redirect HTTP to HTTPS if not coming from Cloudflare
+    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
+        return 301 https://\$server_name\$request_uri;
+    }
+
+    root ${app_path};
+    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
+EONG
+
+        # Add Cloudflare configuration
+        cat >> /etc/nginx/sites-available/$domain_name << 'EONG'
+    # Cloudflare SSL configuration
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    
+    real_ip_header CF-Connecting-IP;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+EONG
+
+        if [ "$use_php" = "y" ]; then
+            cat >> /etc/nginx/sites-available/$domain_name << EONG
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+EONG
+        fi
+
+        # Add final configurations
+        cat >> /etc/nginx/sites-available/$domain_name << 'EONG'
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EONG
+
+        ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
+        nginx -t && systemctl restart nginx then
         # Tulis konfigurasi Nginx dasar
         cat > /etc/nginx/sites-available/$domain_name << 'EOL'
 server {
@@ -464,7 +538,8 @@ EOL
         systemctl restart nginx
 
     elif [ "$web_server" = "apache" ]; then
-        cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
+        # Create Apache configuration
+        cat > /etc/apache2/sites-available/${domain_name}.conf << EOAPACHE
 <VirtualHost *:80>
     ServerName ${domain_name}
     DocumentRoot ${app_path}
@@ -478,16 +553,17 @@ EOL
     ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
 </VirtualHost>
-EOL
+EOAPACHE
 
         a2ensite ${domain_name}
-        systemctl restart apache2
+        apache2ctl configtest && systemctl restart apache2
     fi
 
     log_info "Konfigurasi aplikasi web selesai!"
     if [ "$use_ssl" = "y" ]; then
         log_info "SSL telah dikonfigurasi untuk $domain_name"
     fi
+}
 }
 
 # Fungsi untuk mengonfigurasi PHP
