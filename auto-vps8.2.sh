@@ -211,7 +211,6 @@ install_phpmyadmin() {
     mkdir -p "${pma_path}"
 
     log_info "Mengunduh phpMyAdmin..."
-@@ -268,6 +269,11 @@
     
     real_ip_header CF-Connecting-IP;
     # Security headers
@@ -221,11 +220,9 @@ install_phpmyadmin() {
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
-@@ -277,27 +283,35 @@
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
-        
         # Security for phpMyAdmin
         fastcgi_intercept_errors on;
         fastcgi_read_timeout 300;
@@ -243,7 +240,6 @@ EOL
         # Buat symlink jika belum ada
         if [ -f "/etc/nginx/sites-available/${domain_name}" ]; then
             ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
-            
             # Test konfigurasi nginx sebelum restart
             if nginx -t; then
                 systemctl restart nginx
