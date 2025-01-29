@@ -47,6 +47,12 @@ add_webserver_ppa() {
     fi
 }
 
+# Fungsi untuk menambahkan PPA PHP
+add_php_repository() {
+    log_info "Menyesuaikan PPA untuk PHP..."
+    add_ppa_if_needed "ondrej/php"
+}
+
 # Fungsi untuk menambahkan PPA hanya jika belum ada
 add_ppa_if_needed() {
     local ppa_name=$1
