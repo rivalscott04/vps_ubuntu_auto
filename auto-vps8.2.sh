@@ -25,6 +25,42 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+
+# Fungsi untuk menambahkan PPA Web Server
+add_webserver_ppa() {
+    log_info "Menyesuaikan PPA untuk Web Server..."
+
+    if dpkg -l | grep -q "apache2"; then
+        add_ppa_if_needed "ondrej/apache2"
+    elif dpkg -l | grep -q "nginx"; then
+        echo "Pilih versi Nginx yang akan diinstall:"
+        echo "1. Nginx Mainline (ppa:ondrej/nginx-mainline)"
+        echo "2. Nginx Stable (ppa:ondrej/nginx)"
+        read -p "Pilihan [1-2]: " nginx_choice
+
+        case $nginx_choice in
+            1) add_ppa_if_needed "ondrej/nginx-mainline" ;;
+            2) add_ppa_if_needed "ondrej/nginx" ;;
+            *) log_warning "Pilihan tidak valid, menggunakan default (Stable)"
+               add_ppa_if_needed "ondrej/nginx" ;;
+        esac
+    fi
+}
+
+# Fungsi untuk menambahkan PPA hanya jika belum ada
+add_ppa_if_needed() {
+    local ppa_name=$1
+    local ppa_list="/etc/apt/sources.list.d/${ppa_name}*.list"
+
+    if ls $ppa_list 1> /dev/null 2>&1; then
+        log_info "PPA $ppa_name sudah ditambahkan"
+    else
+        log_info "Menambahkan PPA $ppa_name..."
+        add-apt-repository -y ppa:$ppa_name > /dev/null 2>&1
+        apt update > /dev/null 2>&1
+    fi
+}
+
 # Fungsi 1: Instalasi dan Konfigurasi PHP
 install_php() {
     add_php_repository
@@ -64,7 +100,7 @@ install_php() {
     fi
 }
 
-# Fungsi 2: Instalasi dan Konfigurasi Web Server
+# Fungsi untuk menginstal Web Server
 install_webserver() {
     echo "Pilih web server yang akan diinstall:"
     echo "1. Apache"
@@ -73,8 +109,9 @@ install_webserver() {
 
     case $server_choice in
         1) log_info "Menginstal Apache2..."
+           # Tambah PPA dulu sebelum install
+           add_ppa_if_needed "ondrej/apache2"
            apt install -y apache2 > /dev/null 2>&1
-           add_webserver_ppa
            a2enmod rewrite > /dev/null 2>&1
            a2enmod ssl > /dev/null 2>&1
            a2enmod headers > /dev/null 2>&1
@@ -82,8 +119,9 @@ install_webserver() {
            log_info "Apache2 berhasil diinstall!"
            ;;
         2) log_info "Menginstal Nginx..."
+           # Tambah PPA dulu sebelum install
+           add_ppa_if_needed "ondrej/nginx"
            apt install -y nginx > /dev/null 2>&1
-           add_webserver_ppa
            systemctl restart nginx
            log_info "Nginx berhasil diinstall!"
            ;;
