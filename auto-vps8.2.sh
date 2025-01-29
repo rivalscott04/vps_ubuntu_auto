@@ -139,29 +139,84 @@ install_phpmyadmin() {
     check_and_install_package unzip
     check_and_install_package wget
 
-    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
+    read -p "Masukkan domain untuk phpMyAdmin (contoh: a.domain.com): " domain_name
+    read -p "Masukkan alias untuk phpMyAdmin (contoh: _pma): " pma_alias
     read -p "Web server yang digunakan (apache/nginx): " web_server
 
-    mkdir -p /var/www/${pma_alias}
+    # Path phpMyAdmin
+    pma_path="/var/www/${pma_alias}"
+    mkdir -p ${pma_path}
+
+    # Download phpMyAdmin
     wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
     unzip /tmp/phpmyadmin.zip -d /tmp/
-    mv /tmp/phpMyAdmin-*-all-languages/* /var/www/${pma_alias}/
+    mv /tmp/phpMyAdmin-*-all-languages/* ${pma_path}/
     rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
 
     if [ "$web_server" = "nginx" ]; then
-        apt install -y nginx
+        # Konfigurasi Nginx
+        cat > /etc/nginx/sites-available/${domain_name} <<EOL
+server {
+    listen 80;
+    server_name ${domain_name};
+
+    root /var/www/html;
+    index index.php index.html index.htm;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location /${pma_alias} {
+        alias ${pma_path};
+        index index.php index.html index.htm;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOL
+        ln -s /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/
         systemctl restart nginx
+
     elif [ "$web_server" = "apache" ]; then
-        apt install -y apache2
+        # Konfigurasi Apache
+        cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
+<VirtualHost *:80>
+    ServerName ${domain_name}
+    DocumentRoot /var/www/html
+
+    Alias /${pma_alias} ${pma_path}
+
+    <Directory ${pma_path}>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    <Directory /var/www/html>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+</VirtualHost>
+EOL
+        a2ensite ${domain_name}
         systemctl restart apache2
     fi
 
-    echo "✅ phpMyAdmin berhasil diinstall dengan alias '${pma_alias}'!"
-}
-
-# Fungsi Dummy untuk Konfigurasi Web App
-configure_webapp() {
-    echo "⚠️ Konfigurasi Aplikasi Web masih dalam pengembangan!"
+    echo "✅ phpMyAdmin berhasil diinstall dan dapat diakses di http://${domain_name}/${pma_alias}!"
 }
 
 # Menu utama
