@@ -404,8 +404,7 @@ while true; do
         5) configure_webapp ;;
         6) install_database ;;
         7) install_phpmyadmin ;;
-        8) echo "Terima kasih!"; exit 0
-8) echo "Terima kasih!"; exit 0 ;;
+        8) echo "Terima kasih!"; exit 0 ;;
         *) echo "Pilihan tidak valid" ;;
     esac
 
