@@ -25,83 +25,8 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Fungsi untuk memastikan paket tertentu sudah terinstal
-check_and_install_package() {
-    if ! dpkg -l | grep -q "^ii  $1 "; then
-        log_warning "Paket $1 belum terinstal. Menginstal..."
-        apt update > /dev/null 2>&1
-        apt install -y $1 > /dev/null 2>&1
-        if [ $? -eq 0 ]; then
-            log_info "Paket $1 berhasil diinstal"
-        else
-            log_error "Gagal menginstal paket $1"
-            exit 1
-        fi
-    fi
-}
-
-# Fungsi untuk menambahkan PPA hanya jika belum ada
-add_ppa_if_needed() {
-    local ppa_name=$1
-    local ppa_list="/etc/apt/sources.list.d/${ppa_name}*.list"
-
-    if ls $ppa_list 1> /dev/null 2>&1; then
-        log_info "PPA $ppa_name sudah ditambahkan"
-    else
-        log_info "Menambahkan PPA $ppa_name..."
-        add-apt-repository -y ppa:$ppa_name > /dev/null 2>&1
-        apt update > /dev/null 2>&1
-    fi
-}
-
-# Fungsi untuk menambahkan PPA Web Server
-add_webserver_ppa() {
-    log_info "Menyesuaikan PPA untuk Web Server..."
-
-    if dpkg -l | grep -q "apache2"; then
-        add_ppa_if_needed "ondrej/apache2"
-    elif dpkg -l | grep -q "nginx"; then
-        echo "Pilih versi Nginx yang akan diinstall:"
-        echo "1. Nginx Mainline (ppa:ondrej/nginx-mainline)"
-        echo "2. Nginx Stable (ppa:ondrej/nginx)"
-        read -p "Pilihan [1-2]: " nginx_choice
-
-        case $nginx_choice in
-            1) add_ppa_if_needed "ondrej/nginx-mainline" ;;
-            2) add_ppa_if_needed "ondrej/nginx" ;;
-            *) log_warning "Pilihan tidak valid, menggunakan default (Stable)"
-               add_ppa_if_needed "ondrej/nginx" ;;
-        esac
-    fi
-}
-
-# Fungsi untuk menambahkan PPA PHP
-add_php_repository() {
-    log_info "Menyesuaikan PPA untuk PHP..."
-    add_ppa_if_needed "ondrej/php"
-}
-
-# Fungsi untuk mengkonfigurasi MySQL user baru
-configure_mysql_user() {
-    log_info "Konfigurasi user MySQL baru..."
-    read -p "Masukkan username MySQL baru: " mysql_user
-    read -s -p "Masukkan password untuk user $mysql_user: " mysql_pass
-    echo
-
-    mysql -e "CREATE USER '${mysql_user}'@'localhost' IDENTIFIED BY '${mysql_pass}';"
-    mysql -e "GRANT ALL PRIVILEGES ON *.* TO '${mysql_user}'@'localhost' WITH GRANT OPTION;"
-    mysql -e "FLUSH PRIVILEGES;"
-    
-    if [ $? -eq 0 ]; then
-        log_info "User MySQL ${mysql_user} berhasil dibuat dengan full privileges!"
-    else
-        log_error "Gagal membuat user MySQL"
-    fi
-}
-
-# Fungsi untuk menginstal PHP
+# Fungsi 1: Instalasi dan Konfigurasi PHP
 install_php() {
-    add_webserver_ppa
     add_php_repository
 
     apt update > /dev/null 2>&1
@@ -113,34 +38,33 @@ install_php() {
     read -p "Pilihan [1-3]: " php_choice
 
     case $php_choice in
-        1) php_version="8.1" ;;
-        2) php_version="8.2" ;;
-        3) php_version="8.3" ;;
+        1) selected_php_version="8.1" ;;
+        2) selected_php_version="8.2" ;;
+        3) selected_php_version="8.3" ;;
         *) log_error "Pilihan tidak valid"; return ;;
     esac
 
-    log_info "Menginstal PHP ${php_version} dan ekstensi..."
+    log_info "Menginstal PHP ${selected_php_version} dan ekstensi..."
     
-    apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli \
-                   php${php_version}-common php${php_version}-mysql php${php_version}-zip \
-                   php${php_version}-gd php${php_version}-mbstring php${php_version}-curl \
-                   php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
-                   php${php_version}-intl php${php_version}-readline php${php_version}-ldap \
-                   php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis \
+    apt install -y php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
+                   php${selected_php_version}-common php${selected_php_version}-mysql php${selected_php_version}-zip \
+                   php${selected_php_version}-gd php${selected_php_version}-mbstring php${selected_php_version}-curl \
+                   php${selected_php_version}-xml php${selected_php_version}-bcmath php${selected_php_version}-pgsql \
+                   php${selected_php_version}-intl php${selected_php_version}-readline php${selected_php_version}-ldap \
+                   php${selected_php_version}-msgpack php${selected_php_version}-igbinary php${selected_php_version}-redis \
                    > /dev/null 2>&1
 
     if [ $? -eq 0 ]; then
-        log_info "PHP ${php_version} berhasil diinstall!"
-        configure_php ${php_version}
+        log_info "PHP ${selected_php_version} berhasil diinstall!"
+        configure_php ${selected_php_version}
+        # Export PHP version untuk digunakan di fungsi lain
+        export selected_php_version
     else
-        log_error "Gagal menginstal PHP ${php_version}"
+        log_error "Gagal menginstal PHP ${selected_php_version}"
     fi
-
-    # Export PHP version untuk digunakan di fungsi lain
-    export selected_php_version=${php_version}
 }
 
-# Fungsi untuk menginstal Web Server
+# Fungsi 2: Instalasi dan Konfigurasi Web Server
 install_webserver() {
     echo "Pilih web server yang akan diinstall:"
     echo "1. Apache"
@@ -167,7 +91,7 @@ install_webserver() {
     esac
 }
 
-# Fungsi untuk menginstal Database
+# Fungsi 3: Instalasi dan Konfigurasi Database
 install_database() {
     echo "Pilih database yang akan diinstall:"
     echo "1. MySQL"
@@ -196,7 +120,7 @@ install_database() {
     esac
 }
 
-# Fungsi untuk menginstal phpMyAdmin
+# Fungsi 4: Instalasi dan Konfigurasi phpMyAdmin
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
@@ -221,14 +145,13 @@ install_phpmyadmin() {
     sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '${blowfish_secret}'/" ${pma_path}/config.inc.php
 
     if [ "$web_server" = "nginx" ]; then
-        cat > /etc/nginx/sites-available/${domain_name} <<EOL
-server {
+        nginx_conf="server {
     listen 80;
     listen [::]:80;
     server_name ${domain_name};
 
     # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
+    if (\$http_cf_visitor !~ '{\"scheme\":\"https\"}') {
         return 301 https://\$server_name\$request_uri;
     }
 
@@ -275,14 +198,12 @@ server {
     location ~ /\.ht {
         deny all;
     }
-}
-EOL
-        ln -s /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/
-        systemctl restart nginx
-
+}"
+        echo "$nginx_conf" > "/etc/nginx/sites-available/$domain_name"
+        ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
+        nginx -t && systemctl restart nginx
     elif [ "$web_server" = "apache" ]; then
-        cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
-<VirtualHost *:80>
+        apache_conf="<VirtualHost *:80>
     ServerName ${domain_name}
     DocumentRoot ${pma_path}
 
@@ -294,9 +215,10 @@ EOL
 
     ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
-</VirtualHost>
-EOL
-        a2ensite ${domain_name} > /dev/null 2>&1
+</VirtualHost>"
+
+        echo "$apache_conf" > "/etc/apache2/sites-available/${domain_name}.conf"
+        a2ensite "${domain_name}" > /dev/null 2>&1
         systemctl restart apache2
     fi
 
@@ -308,7 +230,7 @@ EOL
     log_info "Akses phpMyAdmin di: http://${domain_name}"
 }
 
-# Fungsi untuk menginstal Node.js & npm
+# Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js..."
     check_and_install_package curl
@@ -335,7 +257,7 @@ install_nodejs() {
     fi
 }
 
-# Fungsi untuk menginstal FrankenPHP
+# Fungsi 6: Instalasi FrankenPHP
 install_frankenphp() {
     log_info "Mempersiapkan instalasi FrankenPHP..."
     check_and_install_package curl
@@ -352,7 +274,7 @@ install_frankenphp() {
     if [ $? -eq 0 ]; then
         log_info "FrankenPHP berhasil diinstall!"
         # Buat service untuk FrankenPHP
-        cat > /etc/systemd/system/frankenphp.service <<EOL
+        cat > /etc/systemd/system/frankenphp.service << 'EOF'
 [Unit]
 Description=FrankenPHP Application Server
 After=network.target
@@ -365,7 +287,7 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF
         systemctl daemon-reload
         systemctl enable frankenphp
         systemctl start frankenphp
@@ -374,7 +296,7 @@ EOL
     fi
 }
 
-# Fungsi untuk konfigurasi aplikasi web
+# Fungsi 7: Konfigurasi Aplikasi Web
 configure_webapp() {
     read -p "Masukkan domain aplikasi web: " domain_name
     read -p "Masukkan path aplikasi (contoh: /var/www/myapp): " app_path
@@ -386,10 +308,11 @@ configure_webapp() {
     chown -R www-data:www-data "$app_path"
     chmod -R 755 "$app_path"
 
-    if [ "$web_server" = "nginx" ]; then
-        log_info "Membuat konfigurasi Nginx..."
-        
-        nginx_conf="server {
+    case "$web_server" in
+        nginx)
+            log_info "Membuat konfigurasi Nginx..."
+            
+            nginx_conf="server {
     listen 80;
     listen [::]:80;
     server_name ${domain_name};
@@ -432,8 +355,8 @@ configure_webapp() {
         try_files \$uri \$uri/ /index.php?\$args;
     }"
 
-        if [ "$use_php" = "y" ]; then
-            nginx_conf="${nginx_conf}
+            if [ "$use_php" = "y" ]; then
+                nginx_conf="${nginx_conf}
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
@@ -441,23 +364,24 @@ configure_webapp() {
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }"
-        fi
+            fi
 
-        nginx_conf="${nginx_conf}
+            nginx_conf="${nginx_conf}
 
     location ~ /\.ht {
         deny all;
     }
 }"
 
-        echo "$nginx_conf" > "/etc/nginx/sites-available/$domain_name"
-        ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
-        nginx -t && systemctl restart nginx
+            echo "$nginx_conf" > "/etc/nginx/sites-available/$domain_name"
+            ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
+            nginx -t && systemctl restart nginx
+            ;;
 
-    elif [ "$web_server" = "apache" ]; then
-        log_info "Membuat konfigurasi Apache..."
-        
-        apache_conf="<VirtualHost *:80>
+        apache)
+            log_info "Membuat konfigurasi Apache..."
+            
+            apache_conf="<VirtualHost *:80>
     ServerName ${domain_name}
     DocumentRoot ${app_path}
 
@@ -471,13 +395,16 @@ configure_webapp() {
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
 </VirtualHost>"
 
-        echo "$apache_conf" > "/etc/apache2/sites-available/${domain_name}.conf"
-        a2ensite "${domain_name}"
-        apache2ctl configtest && systemctl restart apache2
-    else
-        log_error "Web server tidak valid"
-        return 1
-    fi
+            echo "$apache_conf" > "/etc/apache2/sites-available/${domain_name}.conf"
+            a2ensite "${domain_name}"
+            apache2ctl configtest && systemctl restart apache2
+            ;;
+            
+        *)
+            log_error "Web server tidak valid. Pilih 'apache' atau 'nginx'"
+            return
+            ;;
+    esac
 
     log_info "Konfigurasi aplikasi web selesai!"
     if [ "$use_ssl" = "y" ]; then
@@ -485,298 +412,7 @@ configure_webapp() {
     fi
 }
 
-    if [ "$web_server" = "nginx" ]; then
-        log_info "Membuat konfigurasi Nginx..."
-        
-        # Base configuration
-        cat > "/etc/nginx/sites-available/$domain_name" << 'EON'
-server {
-    listen 80;
-    listen [::]:80;
-EON
-
-        # Server name and basic settings
-        cat >> "/etc/nginx/sites-available/$domain_name" << EON
-    server_name ${domain_name};
-
-    # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
-        return 301 https://\$server_name\$request_uri;
-    }
-
-    root ${app_path};
-    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
-EON
-
-        # Cloudflare configuration
-        cat >> "/etc/nginx/sites-available/$domain_name" << 'EON'
-    # Cloudflare SSL configuration
-    set_real_ip_from 173.245.48.0/20;
-    set_real_ip_from 103.21.244.0/22;
-    set_real_ip_from 103.22.200.0/22;
-    set_real_ip_from 103.31.4.0/22;
-    set_real_ip_from 141.101.64.0/18;
-    set_real_ip_from 108.162.192.0/18;
-    set_real_ip_from 190.93.240.0/20;
-    set_real_ip_from 188.114.96.0/20;
-    set_real_ip_from 197.234.240.0/22;
-    set_real_ip_from 198.41.128.0/17;
-    set_real_ip_from 162.158.0.0/15;
-    set_real_ip_from 104.16.0.0/13;
-    set_real_ip_from 104.24.0.0/14;
-    set_real_ip_from 172.64.0.0/13;
-    set_real_ip_from 131.0.72.0/22;
-    set_real_ip_from 2400:cb00::/32;
-    set_real_ip_from 2606:4700::/32;
-    set_real_ip_from 2803:f800::/32;
-    set_real_ip_from 2405:b500::/32;
-    set_real_ip_from 2405:8100::/32;
-    set_real_ip_from 2a06:98c0::/29;
-    set_real_ip_from 2c0f:f248::/32;
-    
-    real_ip_header CF-Connecting-IP;
-
-    location / {
-        try_files $uri $uri/ /index.php?$args;
-    }
-EON
-
-        # PHP configuration if needed
-        if [ "$use_php" = "y" ]; then
-            cat >> "/etc/nginx/sites-available/$domain_name" << EON
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-    }
-EON
-        fi
-
-        # Final configurations
-        cat >> "/etc/nginx/sites-available/$domain_name" << 'EON'
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EON
-
-        ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
-        nginx -t && systemctl restart nginx
-
-    elif [ "$web_server" = "apache" ]; then
-        log_info "Membuat konfigurasi Apache..."
-        
-        cat > "/etc/apache2/sites-available/${domain_name}.conf" << EOAPACHE
-<VirtualHost *:80>
-    ServerName ${domain_name}
-    DocumentRoot ${app_path}
-
-    <Directory ${app_path}>
-        Options Indexes FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
-</VirtualHost>
-EOAPACHE
-
-        a2ensite "${domain_name}"
-        apache2ctl configtest && systemctl restart apache2
-    else
-        log_error "Web server tidak valid"
-        return 1
-    fi
-
-    log_info "Konfigurasi aplikasi web selesai!"
-    if [ "$use_ssl" = "y" ]; then
-        log_info "SSL telah dikonfigurasi untuk $domain_name"
-    fi
-}
-
-    if [ "$web_server" = "nginx" ]; then
-        # Create Nginx configuration
-        cat > /etc/nginx/sites-available/$domain_name << 'EONG'
-server {
-    listen 80;
-    listen [::]:80;
-EONG
-
-        # Add dynamic content
-        cat >> /etc/nginx/sites-available/$domain_name << EONG
-    server_name ${domain_name};
-
-    # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
-        return 301 https://\$server_name\$request_uri;
-    }
-
-    root ${app_path};
-    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
-EONG
-
-        # Add Cloudflare configuration
-        cat >> /etc/nginx/sites-available/$domain_name << 'EONG'
-    # Cloudflare SSL configuration
-    set_real_ip_from 173.245.48.0/20;
-    set_real_ip_from 103.21.244.0/22;
-    set_real_ip_from 103.22.200.0/22;
-    set_real_ip_from 103.31.4.0/22;
-    set_real_ip_from 141.101.64.0/18;
-    set_real_ip_from 108.162.192.0/18;
-    set_real_ip_from 190.93.240.0/20;
-    set_real_ip_from 188.114.96.0/20;
-    set_real_ip_from 197.234.240.0/22;
-    set_real_ip_from 198.41.128.0/17;
-    set_real_ip_from 162.158.0.0/15;
-    set_real_ip_from 104.16.0.0/13;
-    set_real_ip_from 104.24.0.0/14;
-    set_real_ip_from 172.64.0.0/13;
-    set_real_ip_from 131.0.72.0/22;
-    set_real_ip_from 2400:cb00::/32;
-    set_real_ip_from 2606:4700::/32;
-    set_real_ip_from 2803:f800::/32;
-    set_real_ip_from 2405:b500::/32;
-    set_real_ip_from 2405:8100::/32;
-    set_real_ip_from 2a06:98c0::/29;
-    set_real_ip_from 2c0f:f248::/32;
-    
-    real_ip_header CF-Connecting-IP;
-
-    location / {
-        try_files $uri $uri/ /index.php?$args;
-    }
-EONG
-
-        if [ "$use_php" = "y" ]; then
-            cat >> /etc/nginx/sites-available/$domain_name << EONG
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-    }
-EONG
-        fi
-
-        # Add final configurations
-        cat >> /etc/nginx/sites-available/$domain_name << 'EONG'
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EONG
-
-        ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
-        nginx -t && systemctl restart nginx then
-        # Tulis konfigurasi Nginx dasar
-        cat > /etc/nginx/sites-available/$domain_name << 'EOL'
-server {
-    listen 80;
-    listen [::]:80;
-EOL
-
-        # Tambahkan konfigurasi server_name dan redirect
-        cat >> /etc/nginx/sites-available/$domain_name << EOL
-    server_name ${domain_name};
-
-    # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
-        return 301 https://\$server_name\$request_uri;
-    }
-
-    root ${app_path};
-    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
-EOL
-
-        # Tambahkan konfigurasi Cloudflare
-        cat >> /etc/nginx/sites-available/$domain_name << 'EOL'
-    # Cloudflare SSL configuration
-    set_real_ip_from 173.245.48.0/20;
-    set_real_ip_from 103.21.244.0/22;
-    set_real_ip_from 103.22.200.0/22;
-    set_real_ip_from 103.31.4.0/22;
-    set_real_ip_from 141.101.64.0/18;
-    set_real_ip_from 108.162.192.0/18;
-    set_real_ip_from 190.93.240.0/20;
-    set_real_ip_from 188.114.96.0/20;
-    set_real_ip_from 197.234.240.0/22;
-    set_real_ip_from 198.41.128.0/17;
-    set_real_ip_from 162.158.0.0/15;
-    set_real_ip_from 104.16.0.0/13;
-    set_real_ip_from 104.24.0.0/14;
-    set_real_ip_from 172.64.0.0/13;
-    set_real_ip_from 131.0.72.0/22;
-    set_real_ip_from 2400:cb00::/32;
-    set_real_ip_from 2606:4700::/32;
-    set_real_ip_from 2803:f800::/32;
-    set_real_ip_from 2405:b500::/32;
-    set_real_ip_from 2405:8100::/32;
-    set_real_ip_from 2a06:98c0::/29;
-    set_real_ip_from 2c0f:f248::/32;
-    
-    real_ip_header CF-Connecting-IP;
-
-    location / {
-        try_files $uri $uri/ /index.php?$args;
-    }
-EOL
-
-        # Tambahkan konfigurasi PHP jika diperlukan
-        if [ "$use_php" = "y" ]; then
-            cat >> /etc/nginx/sites-available/$domain_name << EOL
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-    }
-EOL
-        fi
-
-        # Tambahkan konfigurasi .htaccess dan tutup server block
-        cat >> /etc/nginx/sites-available/$domain_name << 'EOL'
-    location ~ /\.ht {
-        deny all;
-    }
-}
-EOL
-
-        ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
-        systemctl restart nginx
-
-    elif [ "$web_server" = "apache" ]; then
-        # Create Apache configuration
-        cat > /etc/apache2/sites-available/${domain_name}.conf << EOAPACHE
-<VirtualHost *:80>
-    ServerName ${domain_name}
-    DocumentRoot ${app_path}
-
-    <Directory ${app_path}>
-        Options Indexes FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
-</VirtualHost>
-EOAPACHE
-
-        a2ensite ${domain_name}
-        apache2ctl configtest && systemctl restart apache2
-    fi
-
-    log_info "Konfigurasi aplikasi web selesai!"
-    if [ "$use_ssl" = "y" ]; then
-        log_info "SSL telah dikonfigurasi untuk $domain_name"
-    fi
-}
-}
-
-# Fungsi untuk mengonfigurasi PHP
+# Fungsi 8: Konfigurasi PHP
 configure_php() {
     local php_version=$1
     if [ -z "$php_version" ]; then
@@ -789,7 +425,7 @@ configure_php() {
     if [ ! -f "$php_ini_file" ]; then
         log_error "File php.ini tidak ditemukan di $php_ini_file"
         return
-    }
+    fi
 
     log_info "Mengkonfigurasi PHP $php_version..."
 
@@ -821,6 +457,7 @@ configure_php() {
     log_info "Konfigurasi PHP selesai!"
     log_info "Backup file tersimpan di ${php_ini_file}.backup dan ${php_fpm_file}.backup"
 }
+
 
 # Fungsi untuk menampilkan sistem info
 show_system_info() {
