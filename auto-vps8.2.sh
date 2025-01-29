@@ -195,7 +195,7 @@ install_database() {
     esac
 }
 
-# Fungsi 4: Instalasi dan Konfigurasi phpMyAdmin
+# Fungsi untuk menginstal phpMyAdmin
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
@@ -206,27 +206,36 @@ install_phpmyadmin() {
     read -p "Web server yang digunakan (apache/nginx): " web_server
 
     pma_path="/var/www/${pma_alias}"
-    mkdir -p ${pma_path}
+    mkdir -p "${pma_path}"
 
     log_info "Mengunduh phpMyAdmin..."
     wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
     unzip -q /tmp/phpmyadmin.zip -d /tmp/
-    mv /tmp/phpMyAdmin-*-all-languages/* ${pma_path}/
+    mv /tmp/phpMyAdmin-*-all-languages/* "${pma_path}/"
     rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
 
     # Generate random blowfish secret
     blowfish_secret=$(openssl rand -base64 32)
-    cp ${pma_path}/config.sample.inc.php ${pma_path}/config.inc.php
-    sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '${blowfish_secret}'/" ${pma_path}/config.inc.php
+    cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
+    sed -i "s/\\\$cfg\['blowfish_secret'\] = ''/\\\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
 
     if [ "$web_server" = "nginx" ]; then
-        nginx_conf="server {
+        # Pastikan direktori sites-available ada
+        mkdir -p /etc/nginx/sites-available
+        mkdir -p /etc/nginx/sites-enabled
+
+        # Buat konfigurasi Nginx
+        cat > "/etc/nginx/sites-available/${domain_name}" << 'EOL'
+server {
     listen 80;
     listen [::]:80;
+EOL
+
+        cat >> "/etc/nginx/sites-available/${domain_name}" << EOL
     server_name ${domain_name};
 
     # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{\"scheme\":\"https\"}') {
+    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
         return 301 https://\$server_name\$request_uri;
     }
 
@@ -273,12 +282,29 @@ install_phpmyadmin() {
     location ~ /\.ht {
         deny all;
     }
-}"
-        echo "$nginx_conf" > "/etc/nginx/sites-available/$domain_name"
-        ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
-        nginx -t && systemctl restart nginx
+}
+EOL
+        # Buat symlink jika belum ada
+        if [ -f "/etc/nginx/sites-available/${domain_name}" ]; then
+            ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+            
+            # Test konfigurasi nginx sebelum restart
+            if nginx -t; then
+                systemctl restart nginx
+                log_info "Konfigurasi Nginx berhasil diterapkan"
+            else
+                log_error "Konfigurasi Nginx tidak valid"
+                return 1
+            fi
+        else
+            log_error "File konfigurasi Nginx tidak berhasil dibuat"
+            return 1
+        fi
+
     elif [ "$web_server" = "apache" ]; then
-        apache_conf="<VirtualHost *:80>
+        # Buat konfigurasi Apache
+        cat > "/etc/apache2/sites-available/${domain_name}.conf" << EOL
+<VirtualHost *:80>
     ServerName ${domain_name}
     DocumentRoot ${pma_path}
 
@@ -290,21 +316,23 @@ install_phpmyadmin() {
 
     ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
-</VirtualHost>"
+</VirtualHost>
+EOL
 
-        echo "$apache_conf" > "/etc/apache2/sites-available/${domain_name}.conf"
         a2ensite "${domain_name}" > /dev/null 2>&1
         systemctl restart apache2
+    else
+        log_error "Web server tidak valid"
+        return 1
     fi
 
     # Set correct permissions
-    chown -R www-data:www-data ${pma_path}
-    chmod -R 755 ${pma_path}
+    chown -R www-data:www-data "${pma_path}"
+    chmod -R 755 "${pma_path}"
 
     log_info "phpMyAdmin berhasil diinstall!"
     log_info "Akses phpMyAdmin di: http://${domain_name}"
 }
-
 # Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js..."
