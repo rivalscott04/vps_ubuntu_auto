@@ -195,19 +195,18 @@ install_database() {
     esac
 }
 
-# Fungsi untuk menginstal phpMyAdmin sebagai server block khusus (subdomain)
+# Fungsi untuk menginstal phpMyAdmin sebagai subfolder
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
     check_and_install_package wget
 
-    read -p "Masukkan domain utama (contoh: domain.com): " domain_name
-    read -p "Masukkan subdomain untuk phpMyAdmin (contoh: pma.domain.com): " pma_subdomain
+    read -p "Masukkan domain (contoh: domain.com): " domain_name
     read -p "Web server yang digunakan (apache/nginx): " web_server
-    read -p "Versi PHP yang digunakan (contoh: 8.2): " selected_php_version
+    read -p "Masukkan versi PHP (contoh: 7.4): " php_version
 
-    # Set lokasi instalasi phpMyAdmin di /var/www/html/pma
-    pma_path="/var/www/html/pma"
+    # Set lokasi instalasi phpMyAdmin
+    pma_path="/var/www/html/_pma"
     mkdir -p "${pma_path}"
 
     # Download dan extract phpMyAdmin
@@ -220,72 +219,69 @@ install_phpmyadmin() {
     # Konfigurasi phpMyAdmin
     blowfish_secret=$(openssl rand -base64 32)
     cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
-    sed -i "s|\$cfg\['blowfish_secret'\] = ''|\$cfg\['blowfish_secret'\] = '${blowfish_secret}'|" "${pma_path}/config.inc.php"
+    sed -i "s|cfg
+
+\['blowfish_secret'\]
+
+ = ''|cfg
+
+\['blowfish_secret'\]
+
+ = '${blowfish_secret}'|" "${pma_path}/config.inc.php"
 
     if [ "$web_server" = "nginx" ]; then
-        # Konfigurasi untuk Nginx sebagai subdomain
-        config_file="/etc/nginx/sites-available/${pma_subdomain}"
-
+        # Konfigurasi untuk Nginx
+        config_file="/etc/nginx/conf.d/phpmyadmin.conf"
+        
         cat > "$config_file" << EOF
+# phpMyAdmin Configuration
 server {
     listen 80;
-    server_name ${pma_subdomain};
+    server_name ${domain_name};
+    root /var/www/html;
 
-    root ${pma_path};
-    index index.php index.html;
-
-    location / {
-        try_files \$uri \$uri/ =404;
-    }
-
-    location ~ \.php\$ {
-        include fastcgi_params;
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-    }
-
-    location ~ /\.ht {
-        deny all;
+    location /_pma {
+        alias /var/www/html/_pma;
+        index index.php;
+        
+        location ~ ^/_pma/.+\\.php$ {
+            alias /var/www/html/_pma;
+            fastcgi_pass unix:/var/run/php/php${php_version}-fpm.sock;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME \$request_filename;
+        }
+        
+        location ~ /\\.ht {
+            deny all;
+        }
     }
 }
 EOF
-
-        ln -s "$config_file" /etc/nginx/sites-enabled/
         nginx -t && systemctl restart nginx
-        log_info "Konfigurasi Nginx untuk phpMyAdmin sebagai subdomain berhasil diterapkan!"
 
     elif [ "$web_server" = "apache" ]; then
-        # Konfigurasi untuk Apache sebagai VirtualHost baru
-        config_file="/etc/apache2/sites-available/${pma_subdomain}.conf"
-
+        # Konfigurasi untuk Apache
+        config_file="/etc/apache2/conf-available/phpmyadmin.conf"
+        
         cat > "$config_file" << EOF
-<VirtualHost *:80>
-    ServerName ${pma_subdomain}
+Alias /_pma /var/www/html/_pma
 
-    DocumentRoot ${pma_path}
-
-    <Directory ${pma_path}>
-        Options FollowSymLinks
-        AllowOverride All
-        Require all granted
-
-        <IfModule mod_php.c>
-            php_value upload_max_filesize 64M
-            php_value max_execution_time 300
-            php_value max_input_time 300
-            php_value memory_limit 256M
-            php_value post_max_size 64M
-        </IfModule>
-    </Directory>
-
-    ErrorLog \${APACHE_LOG_DIR}/${pma_subdomain}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${pma_subdomain}_access.log combined
-</VirtualHost>
+<Directory /var/www/html/_pma>
+    Options FollowSymLinks
+    AllowOverride All
+    Require all granted
+    
+    <IfModule mod_php.c>
+        php_value upload_max_filesize 64M
+        php_value max_execution_time 300
+        php_value max_input_time 300
+        php_value memory_limit 256M
+        php_value post_max_size 64M
+    </IfModule>
+</Directory>
 EOF
-
-        a2ensite "${pma_subdomain}.conf"
+        a2enconf phpmyadmin
         systemctl restart apache2
-        log_info "Konfigurasi Apache untuk phpMyAdmin sebagai subdomain berhasil diterapkan!"
     fi
 
     # Set permissions
@@ -293,10 +289,11 @@ EOF
     chmod -R 755 "${pma_path}"
 
     log_info "phpMyAdmin berhasil diinstall!"
-    log_info "Akses phpMyAdmin di: https://${pma_subdomain}"
+    log_info "Akses phpMyAdmin di: http://${domain_name}/_pma"
     log_info "Path instalasi: ${pma_path}"
 }
 
+install_phpmyadmin
 
 
 # Fungsi 6: Instalasi FrankenPHP
