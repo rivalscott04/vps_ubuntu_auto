@@ -430,7 +430,6 @@ server {
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
-
 EOL
 
     if [ "$use_php" = "y" ]; then
