@@ -134,6 +134,120 @@ install_database() {
     esac
 }
 
+# Fungsi untuk menginstal phpMyAdmin
+install_phpmyadmin() {
+    check_and_install_package unzip
+    check_and_install_package wget
+
+    read -p "Masukkan domain untuk phpMyAdmin (contoh: a.domain.com): " domain_name
+    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
+    read -p "Web server yang digunakan (apache/nginx): " web_server
+
+    pma_path="/var/www/${pma_alias}"
+    mkdir -p ${pma_path}
+
+    wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
+    unzip /tmp/phpmyadmin.zip -d /tmp/
+    mv /tmp/phpMyAdmin-*-all-languages/* ${pma_path}/
+    rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
+
+    if [ "$web_server" = "nginx" ]; then
+        cat > /etc/nginx/sites-available/${domain_name} <<EOL
+server {
+    listen 80;
+    server_name ${domain_name};
+
+    root /var/www/html;
+    index index.php index.html index.htm;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    location /${pma_alias} {
+        alias ${pma_path};
+        index index.php index.html index.htm;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.2-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EOL
+        ln -s /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/
+        systemctl restart nginx
+
+    elif [ "$web_server" = "apache" ]; then
+        cat > /etc/apache2/sites-available/${domain_name}.conf <<EOL
+<VirtualHost *:80>
+    ServerName ${domain_name}
+    DocumentRoot /var/www/html
+
+    Alias /${pma_alias} ${pma_path}
+
+    <Directory ${pma_path}>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+</VirtualHost>
+EOL
+        a2ensite ${domain_name}
+        systemctl restart apache2
+    fi
+
+    echo "✅ phpMyAdmin berhasil diinstall dan dapat diakses di http://${domain_name}/${pma_alias}!"
+}
+
+# Fungsi untuk menginstal Node.js & npm
+install_nodejs() {
+    check_and_install_package curl
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    apt update && apt install -y nodejs
+    npm install -g npm@latest
+    echo "✅ Node.js dan npm berhasil diinstall!"
+}
+
+# Fungsi untuk menginstal FrankenPHP
+install_frankenphp() {
+    check_and_install_package curl
+    curl -sSL https://deb.frankenphp.dev/frankenphp.asc | gpg --dearmor -o /usr/share/keyrings/frankenphp-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list
+    apt update && check_and_install_package frankenphp
+    echo "✅ FrankenPHP berhasil diinstall!"
+}
+
+# Fungsi untuk konfigurasi aplikasi web
+configure_webapp() {
+    read -p "Masukkan domain aplikasi web: " domain_name
+    read -p "Masukkan path aplikasi (contoh: /var/www/myapp): " app_path
+    read -p "Web server yang digunakan (apache/nginx): " web_server
+
+    mkdir -p $app_path
+
+    if [ "$web_server" = "nginx" ]; then
+        ln -s /etc/nginx/sites-available/$domain_name /etc/nginx/sites-enabled/
+        systemctl restart nginx
+
+    elif [ "$web_server" = "apache" ]; then
+        a2ensite $domain_name
+        systemctl restart apache2
+    fi
+
+    echo "✅ Konfigurasi aplikasi web selesai!"
+}
+
+
 # Fungsi untuk mengonfigurasi PHP
 configure_php() {
     if ! command -v php &> /dev/null; then
