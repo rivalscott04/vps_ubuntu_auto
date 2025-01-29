@@ -138,22 +138,40 @@ install_database() {
     read -p "Pilihan [1-3]: " db_choice
 
     case $db_choice in
-        1) log_info "Menginstal MySQL..."
-           apt install -y mysql-server > /dev/null 2>&1
-           mysql_secure_installation
-           configure_mysql_user
-           log_info "MySQL berhasil diinstall!"
-           ;;
+        1|3)  # MySQL atau MariaDB
+            if [ "$db_choice" = "1" ]; then
+                log_info "Menginstal MySQL..."
+                apt install -y mysql-server > /dev/null 2>&1
+            else
+                log_info "Menginstal MariaDB..."
+                apt install -y mariadb-server > /dev/null 2>&1
+            fi
+            
+            mysql_secure_installation
+            
+            echo "Pilih opsi manajemen user:"
+            echo "1. Buat user baru (root tetap ada)"
+            echo "2. Hapus root dan buat user baru"
+            read -p "Pilihan [1-2]: " user_choice
+            
+            case $user_choice in
+                1) configure_mysql_user ;;
+                2) mysql_change_root ;;
+                *) log_error "Pilihan tidak valid" ;;
+            esac
+            
+            if [ "$db_choice" = "1" ]; then
+                log_info "MySQL berhasil diinstall!"
+            else
+                log_info "MariaDB berhasil diinstall!"
+            fi
+            ;;
+            
         2) log_info "Menginstal PostgreSQL..."
            apt install -y postgresql postgresql-contrib > /dev/null 2>&1
            log_info "PostgreSQL berhasil diinstall!"
            ;;
-        3) log_info "Menginstal MariaDB..."
-           apt install -y mariadb-server > /dev/null 2>&1
-           mysql_secure_installation
-           configure_mysql_user
-           log_info "MariaDB berhasil diinstall!"
-           ;;
+           
         *) log_error "Pilihan tidak valid" ;;
     esac
 }
@@ -497,6 +515,47 @@ configure_php() {
 }
 
 
+# Fungsi untuk menghapus root dan membuat user baru MySQL
+mysql_change_root() {
+    log_info "Konfigurasi penggantian user root MySQL..."
+    
+    # Input untuk user baru
+    read -p "Masukkan username MySQL baru: " mysql_user
+    read -s -p "Masukkan password untuk user $mysql_user: " mysql_pass
+    echo
+
+    # Buat user baru dan berikan privileges
+    mysql -e "CREATE USER '${mysql_user}'@'localhost' IDENTIFIED BY '${mysql_pass}';"
+    mysql -e "GRANT ALL PRIVILEGES ON *.* TO '${mysql_user}'@'localhost' WITH GRANT OPTION;"
+    mysql -e "FLUSH PRIVILEGES;"
+    
+    if [ $? -eq 0 ]; then
+        # Hapus user root
+        mysql -e "DROP USER 'root'@'localhost';"
+        mysql -e "FLUSH PRIVILEGES;"
+        
+        if [ $? -eq 0 ]; then
+            log_info "User root berhasil dihapus dan diganti dengan user ${mysql_user}"
+            
+            # Buat file konfigurasi untuk user baru
+            cat > ~/.my.cnf << EOL
+[client]
+user=${mysql_user}
+password=${mysql_pass}
+EOL
+            chmod 600 ~/.my.cnf
+            
+            log_info "File konfigurasi MySQL telah dibuat di ~/.my.cnf"
+        else
+            log_error "Gagal menghapus user root"
+        fi
+    else
+        log_error "Gagal membuat user baru"
+    fi
+}
+
+
+
 # Fungsi untuk menampilkan sistem info
 show_system_info() {
     log_info "=== Informasi Sistem ==="
@@ -526,7 +585,7 @@ show_system_info() {
     fi
 }
 
-# Menu utama
+# Modifikasi menu utama dengan menambahkan opsi baru
 while true; do
     clear
     echo "=============================="
@@ -541,9 +600,10 @@ while true; do
     echo "7. Konfigurasi Aplikasi Web"
     echo "8. Konfigurasi PHP"
     echo "9. Tampilkan Informasi Sistem"
+    echo "10. Ganti User Root MySQL"
     echo "0. Keluar"
     echo "=============================="
-    read -p "Pilihan [0-9]: " choice
+    read -p "Pilihan [0-10]: " choice
 
     case $choice in
         1) install_php ;;
@@ -555,6 +615,7 @@ while true; do
         7) configure_webapp ;;
         8) configure_php ;;
         9) show_system_info ;;
+        10) mysql_change_root ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;
