@@ -195,7 +195,7 @@ install_database() {
     esac
 }
 
-# Fungsi untuk menginstal phpMyAdmin sebagai subfolder
+# Fungsi untuk menginstal phpMyAdmin sebagai subfolder dengan konfigurasi SSL Cloudflare friendly
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package unzip
@@ -220,10 +220,10 @@ install_phpmyadmin() {
     # Konfigurasi phpMyAdmin
     blowfish_secret=$(openssl rand -base64 32)
     cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
-    sed -i "s|cfg\['blowfish_secret'\] = ''|cfg\['blowfish_secret'\] = '${blowfish_secret}'|" "${pma_path}/config.inc.php"
+    sed -i "s|\$cfg\['blowfish_secret'\] = ''|\$cfg\['blowfish_secret'\] = '${blowfish_secret}'|" "${pma_path}/config.inc.php"
 
     if [ "$web_server" = "nginx" ]; then
-        # Konfigurasi untuk Nginx
+        # Konfigurasi untuk Nginx agar tidak bentrok dengan Cloudflare SSL
         config_file="/etc/nginx/sites-available/${domain_name}"
 
         # Backup konfigurasi Nginx yang sudah ada
@@ -231,30 +231,50 @@ install_phpmyadmin() {
             cp "$config_file" "${config_file}.backup"
         fi
 
+        # Pastikan konfigurasi server ada
+        if ! grep -q "server_name ${domain_name};" "$config_file"; then
+            cat > "$config_file" << EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+
+    root /var/www/html;
+    index index.php index.html;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+}
+EOF
+        fi
+
         # Tambahkan konfigurasi phpMyAdmin ke file konfigurasi Nginx
         cat >> "$config_file" << EOF
+
 # Konfigurasi phpMyAdmin
 location /${pma_alias} {
     alias ${pma_path};
     index index.php;
+    autoindex off;
+}
 
-    location ~ ^/${pma_alias}/.+\.php$ {
-        alias ${pma_path};
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        include fastcgi_params;
-        fastcgi_param SCRIPT_FILENAME \$request_filename;
-    }
+location ~ ^/${pma_alias}/.+\.php$ {
+    alias ${pma_path};
+    include fastcgi_params;
+    fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+    fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+}
 
-    location ~ /${pma_alias}/\.ht {
-        deny all;
-    }
+location ~ /\.ht {
+    deny all;
 }
 EOF
         # Test dan restart Nginx
         nginx -t && systemctl restart nginx
+        log_info "Konfigurasi Nginx untuk phpMyAdmin berhasil diterapkan!"
 
     elif [ "$web_server" = "apache" ]; then
-        # Konfigurasi untuk Apache
+        # Konfigurasi untuk Apache agar tidak bentrok dengan Cloudflare SSL
         config_file="/etc/apache2/sites-available/${domain_name}.conf"
 
         # Backup konfigurasi Apache yang sudah ada
@@ -264,6 +284,7 @@ EOF
 
         # Tambahkan konfigurasi phpMyAdmin ke file konfigurasi Apache
         cat >> "$config_file" << EOF
+
 # Konfigurasi phpMyAdmin
 Alias /${pma_alias} ${pma_path}
 
@@ -284,6 +305,7 @@ EOF
         # Aktifkan konfigurasi dan restart Apache
         a2ensite "${domain_name}.conf"
         systemctl restart apache2
+        log_info "Konfigurasi Apache untuk phpMyAdmin berhasil diterapkan!"
     fi
 
     # Set permissions
@@ -294,32 +316,7 @@ EOF
     log_info "Akses phpMyAdmin di: https://${domain_name}/${pma_alias}"
     log_info "Path instalasi: ${pma_path}"
 }
-# Fungsi 5: Instalasi Node.js & npm
-install_nodejs() {
-    log_info "Mempersiapkan instalasi Node.js..."
-    check_and_install_package curl
 
-    # Tambahkan repository Node.js
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
-    
-    log_info "Menginstal Node.js dan npm..."
-    apt install -y nodejs > /dev/null 2>&1
-    
-    # Update npm ke versi terbaru
-    npm install -g npm@latest > /dev/null 2>&1
-
-    # Install beberapa package global yang umum digunakan
-    log_info "Menginstal package global..."
-    npm install -g pm2 yarn > /dev/null 2>&1
-
-    if command -v node > /dev/null; then
-        node_version=$(node -v)
-        npm_version=$(npm -v)
-        log_info "Node.js ${node_version} dan npm ${npm_version} berhasil diinstall!"
-    else
-        log_error "Gagal menginstal Node.js"
-    fi
-}
 
 # Fungsi 6: Instalasi FrankenPHP
 install_frankenphp() {
