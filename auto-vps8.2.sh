@@ -6,7 +6,7 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-# Fungsi untuk memastikan paket terinstal
+# Fungsi untuk memastikan package tambahan tersedia
 check_and_install_package() {
     if ! dpkg -l | grep -q "^ii  $1 "; then
         echo "Paket $1 belum terinstal. Apakah Anda ingin menginstalnya? (y/n)"
@@ -15,34 +15,54 @@ check_and_install_package() {
             apt update && apt upgrade -y
             apt install -y $1
         else
-            echo "Paket $1 diperlukan untuk menjalankan script ini."
+            echo "Paket $1 diperlukan untuk menjalankan fitur ini."
             exit 1
         fi
     fi
 }
 
+# Fungsi untuk menambahkan PPA Web Server sesuai pilihan
+add_webserver_ppa() {
+    echo "Menambahkan repository tambahan untuk web server..."
+
+    if dpkg -l | grep -q "apache2"; then
+        add-apt-repository -y ppa:ondrej/apache2
+        echo "✅ PPA Apache berhasil ditambahkan."
+    elif dpkg -l | grep -q "nginx"; then
+        echo "Pilih versi Nginx yang akan diinstall:"
+        echo "1. Nginx Mainline (ppa:ondrej/nginx-mainline)"
+        echo "2. Nginx Stable (ppa:ondrej/nginx)"
+        read -p "Pilihan [1-2]: " nginx_choice
+
+        case $nginx_choice in
+            1) add-apt-repository -y ppa:ondrej/nginx-mainline ;;
+            2) add-apt-repository -y ppa:ondrej/nginx ;;
+            *) echo "Pilihan tidak valid, menggunakan default (Stable)."
+               add-apt-repository -y ppa:ondrej/nginx ;;
+        esac
+        echo "✅ PPA Nginx berhasil ditambahkan."
+    fi
+
+    apt update && apt upgrade -y
+}
+
 # Fungsi menambahkan repository PHP Ondřej Surý
 add_php_repository() {
     echo "Menambahkan repository PHP Ondřej Surý..."
-    check_and_install_package software-properties-common
+    apt install -y software-properties-common
     add-apt-repository -y ppa:ondrej/php 2>/dev/null
 
-    # Cek apakah repository berhasil ditambahkan
     if ! grep -q "ondrej/php" /etc/apt/sources.list.d/*.list 2>/dev/null; then
         echo "❌ Gagal menambahkan repository PHP dari PPA Ondřej Surý!"
-        echo "Solusi yang bisa dicoba:"
-        echo "- Pastikan server memiliki akses internet."
-        echo "- Jalankan manual: sudo add-apt-repository ppa:ondrej/php"
-        echo "- Jika gagal, gunakan PHP bawaan: sudo apt install php php-cli php-fpm"
         exit 1
     fi
-
     echo "✅ Repository PHP berhasil ditambahkan!"
 }
 
 # Fungsi untuk menginstal PHP
 install_php() {
     add_php_repository
+    add_webserver_ppa
     apt update
 
     echo "Pilih versi PHP yang akan diinstall:"
@@ -58,10 +78,10 @@ install_php() {
         *) echo "Pilihan tidak valid"; return ;;
     esac
 
-    echo "Menginstal PHP $php_version..."
-    apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli php${php_version}-common \
-                   php${php_version}-mysql php${php_version}-zip php${php_version}-gd php${php_version}-mbstring \
-                   php${php_version}-curl php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
+    apt install -y php${php_version} php${php_version}-fpm php${php_version}-cli \
+                   php${php_version}-common php${php_version}-mysql php${php_version}-zip \
+                   php${php_version}-gd php${php_version}-mbstring php${php_version}-curl \
+                   php${php_version}-xml php${php_version}-bcmath php${php_version}-pgsql \
                    php${php_version}-intl php${php_version}-readline php${php_version}-ldap \
                    php${php_version}-msgpack php${php_version}-igbinary php${php_version}-redis
 
@@ -80,12 +100,14 @@ install_webserver() {
     read -p "Pilihan [1-2]: " server_choice
 
     case $server_choice in
-        1) check_and_install_package apache2
+        1) apt install -y apache2
+           add_webserver_ppa
            a2enmod rewrite
            systemctl restart apache2
            echo "✅ Apache terinstall!"
            ;;
-        2) check_and_install_package nginx
+        2) apt install -y nginx
+           add_webserver_ppa
            systemctl restart nginx
            echo "✅ Nginx terinstall!"
            ;;
@@ -93,16 +115,7 @@ install_webserver() {
     esac
 }
 
-# Fungsi untuk menginstal Node.js & npm
-install_nodejs() {
-    check_and_install_package curl
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
-    apt update && apt install -y nodejs
-    npm install -g npm@latest
-    echo "✅ Node.js dan npm berhasil diinstall!"
-}
-
-# Fungsi untuk menginstal Database (MySQL / PostgreSQL)
+# Fungsi untuk menginstal Database
 install_database() {
     echo "Pilih database yang akan diinstall:"
     echo "1. MySQL"
@@ -110,11 +123,11 @@ install_database() {
     read -p "Pilihan [1-2]: " db_choice
 
     case $db_choice in
-        1) check_and_install_package mysql-server
+        1) apt install -y mysql-server
            mysql_secure_installation
            echo "✅ MySQL berhasil diinstall!"
            ;;
-        2) check_and_install_package postgresql postgresql-contrib
+        2) apt install -y postgresql postgresql-contrib
            echo "✅ PostgreSQL berhasil diinstall!"
            ;;
         *) echo "Pilihan tidak valid" ;;
@@ -136,23 +149,19 @@ install_phpmyadmin() {
     rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
 
     if [ "$web_server" = "nginx" ]; then
-        check_and_install_package nginx
+        apt install -y nginx
         systemctl restart nginx
     elif [ "$web_server" = "apache" ]; then
-        check_and_install_package apache2
+        apt install -y apache2
         systemctl restart apache2
     fi
 
     echo "✅ phpMyAdmin berhasil diinstall dengan alias '${pma_alias}'!"
 }
 
-# Fungsi untuk menginstal FrankenPHP
-install_frankenphp() {
-    check_and_install_package curl
-    curl -sSL https://deb.frankenphp.dev/frankenphp.asc | gpg --dearmor -o /usr/share/keyrings/frankenphp-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list
-    apt update && check_and_install_package frankenphp
-    echo "✅ FrankenPHP berhasil diinstall!"
+# Fungsi Dummy untuk Konfigurasi Web App
+configure_webapp() {
+    echo "⚠️ Konfigurasi Aplikasi Web masih dalam pengembangan!"
 }
 
 # Menu utama
@@ -171,11 +180,11 @@ while true; do
     case $choice in
         1) install_php ;;
         2) install_webserver ;;
-        3) install_nodejs ;;
+        3) echo "🚀 Installasi Node.js belum tersedia!" ;;
         4) install_database ;;
         5) install_phpmyadmin ;;
-        6) install_frankenphp ;;
-        7) echo "Konfigurasi Aplikasi Web belum tersedia!" ;;
+        6) echo "🚀 Installasi FrankenPHP belum tersedia!" ;;
+        7) configure_webapp ;;
         8) echo "Terima kasih!"; exit 0 ;;
         *) echo "Pilihan tidak valid" ;;
     esac
