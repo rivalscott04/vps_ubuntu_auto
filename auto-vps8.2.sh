@@ -25,7 +25,20 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-
+# Fungsi untuk memastikan paket tertentu sudah terinstal
+check_and_install_package() {
+    if ! dpkg -l | grep -q "^ii  $1 "; then
+        log_warning "Paket $1 belum terinstal. Menginstal..."
+        apt update > /dev/null 2>&1
+        apt install -y $1 > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            log_info "Paket $1 berhasil diinstal"
+        else
+            log_error "Gagal menginstal paket $1"
+            exit 1
+        fi
+    fi
+}
 # Fungsi untuk menambahkan PPA Web Server
 add_webserver_ppa() {
     log_info "Menyesuaikan PPA untuk Web Server..."
