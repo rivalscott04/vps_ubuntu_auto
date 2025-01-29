@@ -382,9 +382,120 @@ configure_webapp() {
     read -p "Apakah menggunakan PHP? (y/n): " use_php
     read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl
 
-    mkdir -p $app_path
-    chown -R www-data:www-data $app_path
-    chmod -R 755 $app_path
+    mkdir -p "$app_path"
+    chown -R www-data:www-data "$app_path"
+    chmod -R 755 "$app_path"
+
+    if [ "$web_server" = "nginx" ]; then
+        log_info "Membuat konfigurasi Nginx..."
+        
+        # Base configuration
+        cat > "/etc/nginx/sites-available/$domain_name" << 'EON'
+server {
+    listen 80;
+    listen [::]:80;
+EON
+
+        # Server name and basic settings
+        cat >> "/etc/nginx/sites-available/$domain_name" << EON
+    server_name ${domain_name};
+
+    # Redirect HTTP to HTTPS if not coming from Cloudflare
+    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
+        return 301 https://\$server_name\$request_uri;
+    }
+
+    root ${app_path};
+    index index.html index.htm$([ "$use_php" = "y" ] && echo " index.php");
+EON
+
+        # Cloudflare configuration
+        cat >> "/etc/nginx/sites-available/$domain_name" << 'EON'
+    # Cloudflare SSL configuration
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    
+    real_ip_header CF-Connecting-IP;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+EON
+
+        # PHP configuration if needed
+        if [ "$use_php" = "y" ]; then
+            cat >> "/etc/nginx/sites-available/$domain_name" << EON
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+EON
+        fi
+
+        # Final configurations
+        cat >> "/etc/nginx/sites-available/$domain_name" << 'EON'
+    location ~ /\.ht {
+        deny all;
+    }
+}
+EON
+
+        ln -sf "/etc/nginx/sites-available/$domain_name" "/etc/nginx/sites-enabled/"
+        nginx -t && systemctl restart nginx
+
+    elif [ "$web_server" = "apache" ]; then
+        log_info "Membuat konfigurasi Apache..."
+        
+        cat > "/etc/apache2/sites-available/${domain_name}.conf" << EOAPACHE
+<VirtualHost *:80>
+    ServerName ${domain_name}
+    DocumentRoot ${app_path}
+
+    <Directory ${app_path}>
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+</VirtualHost>
+EOAPACHE
+
+        a2ensite "${domain_name}"
+        apache2ctl configtest && systemctl restart apache2
+    else
+        log_error "Web server tidak valid"
+        return 1
+    fi
+
+    log_info "Konfigurasi aplikasi web selesai!"
+    if [ "$use_ssl" = "y" ]; then
+        log_info "SSL telah dikonfigurasi untuk $domain_name"
+    fi
+}
 
     if [ "$web_server" = "nginx" ]; then
         # Create Nginx configuration
