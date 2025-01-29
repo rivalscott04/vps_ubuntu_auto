@@ -201,46 +201,47 @@ install_phpmyadmin() {
     check_and_install_package unzip
     check_and_install_package wget
 
-    read -p "Masukkan domain untuk phpMyAdmin (contoh: pma.domain.com): " domain_name
-    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
+    read -p "Masukkan domain utama (contoh: abc.com): " main_domain
     read -p "Web server yang digunakan (apache/nginx): " web_server
 
-    # Mengubah path ke /var/www/html
-    pma_path="/var/www/html/${pma_alias}"
-    mkdir -p "${pma_path}"
+    # Set path PMA
+    pma_path="_pma"
+    pma_full_path="/var/www/html/${pma_path}"
+    config_name="${main_domain}"
+
+    mkdir -p "${pma_full_path}"
 
     log_info "Mengunduh phpMyAdmin..."
     wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
     unzip -q /tmp/phpmyadmin.zip -d /tmp/
-    mv /tmp/phpMyAdmin-*-all-languages/* "${pma_path}/"
+    mv /tmp/phpMyAdmin-*-all-languages/* "${pma_full_path}/"
     rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
 
     # Generate random blowfish secret
     blowfish_secret=$(openssl rand -base64 32)
-    cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
-    sed -i "s/\\\$cfg\['blowfish_secret'\] = ''/\\\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
+    cp "${pma_full_path}/config.sample.inc.php" "${pma_full_path}/config.inc.php"
+    sed -i "s|cfg\['blowfish_secret'\] = ''|cfg\['blowfish_secret'\] = '${blowfish_secret}'|" "${pma_full_path}/config.inc.php"
 
     if [ "$web_server" = "nginx" ]; then
         # Pastikan direktori sites-available ada
         mkdir -p /etc/nginx/sites-available
         mkdir -p /etc/nginx/sites-enabled
 
+        config_file="/etc/nginx/sites-available/${config_name}"
+
         # Buat konfigurasi Nginx
-        cat > "/etc/nginx/sites-available/${domain_name}" << 'EOL'
+        cat > "${config_file}" << EOF
 server {
     listen 80;
     listen [::]:80;
-EOL
-
-        cat >> "/etc/nginx/sites-available/${domain_name}" << EOL
-    server_name ${domain_name};
+    server_name ${main_domain};
 
     # Redirect HTTP to HTTPS if not coming from Cloudflare
     if (\$http_cf_visitor !~ '{"scheme":"https"}') {
         return 301 https://\$server_name\$request_uri;
     }
 
-    root ${pma_path};
+    root /var/www/html;
     index index.php index.html index.htm;
 
     # Cloudflare SSL configuration
@@ -269,42 +270,49 @@ EOL
     
     real_ip_header CF-Connecting-IP;
 
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-XSS-Protection "1; mode=block";
-    add_header X-Content-Type-Options "nosniff";
+    # phpMyAdmin location (_pma)
+    location /${pma_path} {
+        # Security headers
+        add_header X-Frame-Options "SAMEORIGIN";
+        add_header X-XSS-Protection "1; mode=block";
+        add_header X-Content-Type-Options "nosniff";
 
-    location / {
-        try_files \$uri \$uri/ /index.php?\$args;
-    }
+        location ~ [^/]\.php(/|\$) {
+            fastcgi_split_path_info ^(.+?\.php)(/.*)\$;
+            try_files \$fastcgi_script_name =404;
+            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+            fastcgi_param PATH_INFO \$fastcgi_path_info;
+            
+            # Security for phpMyAdmin
+            fastcgi_intercept_errors on;
+            fastcgi_read_timeout 300;
+        }
 
-    location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
+        location ~ /\.ht {
+            deny all;
+        }
         
-        # Security for phpMyAdmin
-        fastcgi_intercept_errors on;
-        fastcgi_read_timeout 300;
+        # Deny access to specific phpMyAdmin files
+        location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)\$ {
+            deny all;
+        }
     }
 
-    location ~ /\.ht {
-        deny all;
-    }
-    
-    # Deny access to specific phpMyAdmin files
-    location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
-        deny all;
+    # Default location block for other requests
+    location / {
+        try_files \$uri \$uri/ =404;
     }
 }
-EOL
+EOF
 
         # Hapus symlink yang mungkin sudah ada
-        rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        rm -f "/etc/nginx/sites-enabled/${config_name}"
         
         # Buat symlink baru
-        ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+        ln -sf "${config_file}" "/etc/nginx/sites-enabled/"
         
         # Test konfigurasi nginx sebelum restart
         if nginx -t; then
@@ -316,18 +324,31 @@ EOL
         fi
 
     elif [ "$web_server" = "apache" ]; then
+        config_file="/etc/apache2/sites-available/${config_name}.conf"
+        
         # Buat konfigurasi Apache
-        cat > "/etc/apache2/sites-available/${domain_name}.conf" << EOL
+        cat > "${config_file}" << EOF
 <VirtualHost *:80>
-    ServerName ${domain_name}
-    DocumentRoot ${pma_path}
+    ServerName ${main_domain}
+    DocumentRoot /var/www/html
 
-    <Directory ${pma_path}>
+    <Directory /var/www/html>
+        Options FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    Alias /${pma_path} ${pma_full_path}
+    <Directory ${pma_full_path}>
         Options FollowSymLinks
         AllowOverride All
         Require all granted
         
-        # Additional security for phpMyAdmin
+        # Security headers
+        Header set X-Frame-Options "SAMEORIGIN"
+        Header set X-XSS-Protection "1; mode=block"
+        Header set X-Content-Type-Options "nosniff"
+
         <IfModule mod_php.c>
             php_admin_value upload_max_filesize 64M
             php_admin_value max_execution_time 300
@@ -337,24 +358,19 @@ EOL
         </IfModule>
     </Directory>
 
-    # Security headers
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-    Header set X-Content-Type-Options "nosniff"
-
-    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
+    ErrorLog \${APACHE_LOG_DIR}/${config_name}_error.log
+    CustomLog \${APACHE_LOG_DIR}/${config_name}_access.log combined
 </VirtualHost>
-EOL
+EOF
 
         # Aktifkan modul headers jika belum aktif
         a2enmod headers > /dev/null 2>&1
         
         # Hapus konfigurasi lama jika ada
-        a2dissite "${domain_name}" > /dev/null 2>&1
+        a2dissite "${config_name}" > /dev/null 2>&1
         
         # Aktifkan konfigurasi baru
-        a2ensite "${domain_name}" > /dev/null 2>&1
+        a2ensite "${config_name}" > /dev/null 2>&1
         
         # Test konfigurasi Apache sebelum restart
         if apache2ctl configtest; then
@@ -370,11 +386,11 @@ EOL
     fi
 
     # Set correct permissions
-    chown -R www-data:www-data "${pma_path}"
-    chmod -R 755 "${pma_path}"
+    chown -R www-data:www-data "${pma_full_path}"
+    chmod -R 755 "${pma_full_path}"
 
     log_info "phpMyAdmin berhasil diinstall!"
-    log_info "Akses phpMyAdmin di: http://${domain_name}"
+    log_info "Akses phpMyAdmin di: https://${main_domain}/${pma_path}"
 }
 
 # Fungsi 5: Instalasi Node.js & npm
