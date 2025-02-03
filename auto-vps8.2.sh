@@ -528,10 +528,10 @@ configure_webapp() {
             log_info "Konfigurasi Nginx untuk ${app_name}.domain.com selesai!"
             ;;
 
-        apache)
-            log_info "Membuat konfigurasi Apache untuk ${app_name}..."
+apache)
+    log_info "Membuat konfigurasi Apache untuk ${app_name}..."
 
-            apache_conf="<VirtualHost *:80>
+    apache_conf="<VirtualHost *:80>
     ServerName ${app_name}.domain.com
     DocumentRoot ${app_path}
 
@@ -541,8 +541,8 @@ configure_webapp() {
         Require all granted
     </Directory>"
 
-            if [ "$use_laravel" = "y" ]; then
-                apache_conf="${apache_conf}
+    if [ "$use_laravel" = "y" ]; then
+        apache_conf="${apache_conf}
 
     <Directory /var/www/html/${app_name}>
         AllowOverride All
@@ -556,9 +556,9 @@ configure_webapp() {
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]"
-            fi
+    fi
 
-            apache_conf="${apache_conf}
+    apache_conf="${apache_conf}
 
     ErrorLog \${APACHE_LOG_DIR}/${app_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${app_name}_access.log combined
