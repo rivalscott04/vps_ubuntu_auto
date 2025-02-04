@@ -531,47 +531,51 @@ configure_webapp() {
 "apache")
     log_info "Membuat konfigurasi Apache untuk ${app_name}..."
     
-    # Buat konfigurasi dasar dalam satu baris
-    apache_conf="<VirtualHost *:80>"
-    apache_conf="${apache_conf}
+    # Buat file konfigurasi menggunakan heredoc
+    cat > "/etc/apache2/sites-available/${app_name}.domain.com.conf" << EOF
+<VirtualHost *:80>
     ServerName ${app_name}.domain.com
-    DocumentRoot ${app_path}"
-    
-    # Tambah direktori dasar
-    apache_conf="${apache_conf}
+    DocumentRoot ${app_path}
+
     <Directory ${app_path}>
         Options Indexes FollowSymLinks
         AllowOverride All
         Require all granted
-    </Directory>"
+    </Directory>
+EOF
 
-    # Cek Laravel
+    # Tambahkan konfigurasi Laravel jika diperlukan
     if [ "$use_laravel" = "y" ]; then
-        apache_conf="${apache_conf}
+        cat >> "/etc/apache2/sites-available/${app_name}.domain.com.conf" << EOF
+
     <Directory /var/www/html/${app_name}>
         AllowOverride All
     </Directory>
+
     <FilesMatch \.php\$>
-        SetHandler \"proxy:unix:/run/php/php${selected_php_version}-fpm.sock|fcgi://localhost/\"
+        SetHandler "proxy:unix:/run/php/php${selected_php_version}-fpm.sock|fcgi://localhost/"
     </FilesMatch>
+
     RewriteEngine On
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^ index.php [L]"
+    RewriteRule ^ index.php [L]
+EOF
     fi
 
-    # Tambah log
-    apache_conf="${apache_conf}
+    # Tambahkan konfigurasi log
+    cat >> "/etc/apache2/sites-available/${app_name}.domain.com.conf" << EOF
+
     ErrorLog \${APACHE_LOG_DIR}/${app_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${app_name}_access.log combined
-</VirtualHost>"
+</VirtualHost>
+EOF
 
-    # Tulis ke file
-    echo "$apache_conf" > "/etc/apache2/sites-available/${app_name}.domain.com.conf"
+    # Aktifkan site dan restart Apache
     a2ensite "${app_name}.domain.com"
     apache2ctl configtest && systemctl restart apache2
     log_info "Konfigurasi Apache untuk ${app_name}.domain.com selesai!"
-    ;;      
+    ;;
         *)
             log_error "Web server tidak valid. Pilih 'apache' atau 'nginx'"
             return
