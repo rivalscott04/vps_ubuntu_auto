@@ -181,11 +181,24 @@ install_phpmyadmin() {
     check_and_install_package curl
     check_and_install_package nginx
 
-    # Pastikan PHP dan ekstensi yang diperlukan sudah terinstal
+    # Deteksi versi PHP yang terinstall
+    if [ -z "$selected_php_version" ]; then
+        # Cek versi PHP yang terinstall
+        for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+            if dpkg -l | grep -q "php$version"; then
+                selected_php_version="$version"
+                break
+            fi
+        done
+    fi
+
+    # Pastikan PHP terdeteksi
     if [ -z "$selected_php_version" ]; then
         log_error "PHP belum terinstal. Silakan install PHP terlebih dahulu."
         return 1
     fi
+
+    log_info "Menggunakan PHP versi ${selected_php_version}"
 
     # Install required PHP extensions for the selected version
     check_and_install_package "php${selected_php_version}-fpm"
