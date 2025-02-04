@@ -446,10 +446,9 @@ EOF
 # Fungsi 7: Konfigurasi Aplikasi Web dengan Laravel Support
 configure_webapp() {
     read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
-    read -p "Web server yang digunakan (apache/nginx): " web_server
     read -p "Apakah aplikasi menggunakan Laravel? (y/n): " use_laravel
     read -p "Apakah menggunakan PHP? (y/n): " use_php
-    read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl"
+    read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl
 
     # Set path root aplikasi
     if [ "$use_laravel" = "y" ]; then
@@ -463,15 +462,14 @@ configure_webapp() {
     chown -R www-data:www-data "/var/www/html/${app_name}"
     chmod -R 755 "/var/www/html/${app_name}"
 
-    case "$web_server" in
-        nginx)
-            log_info "Membuat konfigurasi Nginx untuk ${app_name}..."
+    log_info "Membuat konfigurasi Nginx untuk ${app_name}..."
 
-            nginx_conf="server {
+    # Base configuration
+    cat > "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+server {
     listen 80;
-    server_name ${app_name}.domain.com;
-
-    root ${app_path};
+    server_name APPNAME.domain.com;
+    root APPPATH;
     index index.php index.html index.htm;
 
     # Cloudflare SSL configuration
@@ -500,87 +498,73 @@ configure_webapp() {
     
     real_ip_header CF-Connecting-IP;
 
-    location / {
-        try_files \$uri \$uri/ /index.php?\$query_string;
-    }"
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+EOF
 
-            if [ "$use_php" = "y" ]; then
-                nginx_conf="${nginx_conf}
+    if [ "$use_laravel" = "y" ]; then
+        cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location = /robots.txt  { access_log off; log_not_found off; }
+
+    error_page 404 /index.php;
+
+    location ~ \.php$ {
+        fastcgi_pass unix:/var/run/php/phpPHPVER-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+EOF
+    else
+        cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+EOF
+        if [ "$use_php" = "y" ]; then
+            cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        include fastcgi_params;
-    }"
-            fi
-
-            nginx_conf="${nginx_conf}
+        fastcgi_pass unix:/var/run/php/phpPHPVER-fpm.sock;
+    }
 
     location ~ /\.ht {
         deny all;
     }
-}"
-
-            echo "$nginx_conf" > "/etc/nginx/sites-available/${app_name}.domain.com"
-            ln -sf "/etc/nginx/sites-available/${app_name}.domain.com" "/etc/nginx/sites-enabled/"
-            nginx -t && systemctl restart nginx
-            log_info "Konfigurasi Nginx untuk ${app_name}.domain.com selesai!"
-            ;;
-
-"apache")
-    log_info "Membuat konfigurasi Apache untuk ${app_name}..."
-    
-    # Buat file konfigurasi menggunakan heredoc
-    cat > "/etc/apache2/sites-available/${app_name}.domain.com.conf" << EOF
-<VirtualHost *:80>
-    ServerName ${app_name}.domain.com
-    DocumentRoot ${app_path}
-
-    <Directory ${app_path}>
-        Options Indexes FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
 EOF
-
-    # Tambahkan konfigurasi Laravel jika diperlukan
-    if [ "$use_laravel" = "y" ]; then
-        cat >> "/etc/apache2/sites-available/${app_name}.domain.com.conf" << EOF
-
-    <Directory /var/www/html/${app_name}>
-        AllowOverride All
-    </Directory>
-
-    <FilesMatch \.php\$>
-        SetHandler "proxy:unix:/run/php/php${selected_php_version}-fpm.sock|fcgi://localhost/"
-    </FilesMatch>
-
-    RewriteEngine On
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^ index.php [L]
-EOF
+        fi
     fi
 
-    # Tambahkan konfigurasi log
-    cat >> "/etc/apache2/sites-available/${app_name}.domain.com.conf" << EOF
-
-    ErrorLog \${APACHE_LOG_DIR}/${app_name}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${app_name}_access.log combined
-</VirtualHost>
+    # Close server block
+    cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+}
 EOF
 
-    # Aktifkan site dan restart Apache
-    a2ensite "${app_name}.domain.com"
-    apache2ctl configtest && systemctl restart apache2
-    log_info "Konfigurasi Apache untuk ${app_name}.domain.com selesai!"
-    ;;
-        *)
-            log_error "Web server tidak valid. Pilih 'apache' atau 'nginx'"
-            return
-            ;;
-    esac
+    # Replace placeholders
+    sed -i "s/APPNAME/${app_name}/g" "/etc/nginx/sites-available/${app_name}.domain.com"
+    sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${app_name}.domain.com"
+    sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${app_name}.domain.com"
+
+    # Create symlink and test config
+    ln -sf "/etc/nginx/sites-available/${app_name}.domain.com" "/etc/nginx/sites-enabled/"
+    nginx -t && systemctl restart nginx
 
     log_info "Konfigurasi aplikasi web selesai!"
     if [ "$use_ssl" = "y" ]; then
