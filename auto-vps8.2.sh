@@ -121,31 +121,11 @@ install_php() {
 
 # Fungsi untuk menginstal Web Server
 install_webserver() {
-    echo "Pilih web server yang akan diinstall:"
-    echo "1. Apache"
-    echo "2. Nginx"
-    read -p "Pilihan [1-2]: " server_choice
-
-    case $server_choice in
-        1) log_info "Menginstal Apache2..."
-           # Tambah PPA dulu sebelum install
-           add_ppa_if_needed "ondrej/apache2"
-           apt install -y apache2 > /dev/null 2>&1
-           a2enmod rewrite > /dev/null 2>&1
-           a2enmod ssl > /dev/null 2>&1
-           a2enmod headers > /dev/null 2>&1
-           systemctl restart apache2
-           log_info "Apache2 berhasil diinstall!"
-           ;;
-        2) log_info "Menginstal Nginx..."
-           # Tambah PPA dulu sebelum install
-           add_ppa_if_needed "ondrej/nginx"
-           apt install -y nginx > /dev/null 2>&1
-           systemctl restart nginx
-           log_info "Nginx berhasil diinstall!"
-           ;;
-        *) log_error "Pilihan tidak valid" ;;
-    esac
+    log_info "Menginstal Nginx..."
+    add_ppa_if_needed "ondrej/nginx-mainline"
+    apt install -y nginx > /dev/null 2>&1
+    systemctl restart nginx
+    log_info "Nginx berhasil diinstall!"
 }
 
 # Fungsi 3: Instalasi dan Konfigurasi Database
@@ -445,30 +425,41 @@ EOF
 
 # Fungsi 7: Konfigurasi Aplikasi Web dengan Laravel Support
 configure_webapp() {
-    read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
-    read -p "Apakah aplikasi menggunakan Laravel? (y/n): " use_laravel
+    # Tanya nama aplikasi dan path untuk Laravel
+    if [ "$use_laravel" = "y" ]; then
+        read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
+        read -p "Masukkan path aplikasi (default: /var/www/html/$app_name): " custom_path
+        if [ -z "$custom_path" ]; then
+            app_path="/var/www/html/${app_name}/public"
+            full_path="/var/www/html/${app_name}"
+        else
+            app_path="${custom_path}/public"
+            full_path="$custom_path"
+        fi
+        read -p "Masukkan domain (contoh: domain.com): " domain_name
+        log_info "Laravel terdeteksi, root diatur ke: $app_path"
+    else
+        read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
+        app_path="/var/www/html/${app_name}"
+        full_path="$app_path"
+        domain_name="${app_name}.domain.com"
+    fi
+
     read -p "Apakah menggunakan PHP? (y/n): " use_php
     read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl
 
-    # Set path root aplikasi
-    if [ "$use_laravel" = "y" ]; then
-        app_path="/var/www/html/${app_name}/public"
-        log_info "Laravel terdeteksi, root diatur ke: $app_path"
-    else
-        app_path="/var/www/html/${app_name}"
-    fi
+    # Buat direktori jika belum ada
+    mkdir -p "$full_path"
+    chown -R www-data:www-data "$full_path"
+    chmod -R 755 "$full_path"
 
-    mkdir -p "$app_path"
-    chown -R www-data:www-data "/var/www/html/${app_name}"
-    chmod -R 755 "/var/www/html/${app_name}"
-
-    log_info "Membuat konfigurasi Nginx untuk ${app_name}..."
+    log_info "Membuat konfigurasi Nginx untuk ${domain_name}..."
 
     # Base configuration
-    cat > "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+    cat > "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 server {
     listen 80;
-    server_name APPNAME.domain.com;
+    server_name DOMAIN;
     root APPPATH;
     index index.php index.html index.htm;
 
@@ -497,18 +488,10 @@ server {
     set_real_ip_from 2c0f:f248::/32;
     
     real_ip_header CF-Connecting-IP;
-
-    # Security Headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
 EOF
 
     if [ "$use_laravel" = "y" ]; then
-        cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+        cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
@@ -531,14 +514,14 @@ EOF
     }
 EOF
     else
-        cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+        cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location / {
         try_files $uri $uri/ =404;
     }
 EOF
         if [ "$use_php" = "y" ]; then
-            cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
@@ -553,25 +536,24 @@ EOF
     fi
 
     # Close server block
-    cat >> "/etc/nginx/sites-available/${app_name}.domain.com" << 'EOF'
+    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 }
 EOF
 
     # Replace placeholders
-    sed -i "s/APPNAME/${app_name}/g" "/etc/nginx/sites-available/${app_name}.domain.com"
-    sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${app_name}.domain.com"
-    sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${app_name}.domain.com"
+    sed -i "s/DOMAIN/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
+    sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
+    sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
 
     # Create symlink and test config
-    ln -sf "/etc/nginx/sites-available/${app_name}.domain.com" "/etc/nginx/sites-enabled/"
+    ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
     nginx -t && systemctl restart nginx
 
     log_info "Konfigurasi aplikasi web selesai!"
     if [ "$use_ssl" = "y" ]; then
-        log_info "SSL telah dikonfigurasi untuk ${app_name}.domain.com"
+        log_info "SSL telah dikonfigurasi untuk ${domain_name}"
     fi
 }
-
 
 # Fungsi 8: Konfigurasi PHP
 configure_php() {
@@ -697,7 +679,7 @@ while true; do
     echo "     Auto Setup VPS Menu     "
     echo "=============================="
     echo "1. Install PHP"
-    echo "2. Install Web Server"
+    echo "2. Install Nginx"
     echo "3. Install Database"
     echo "4. Install phpMyAdmin"
     echo "5. Install Node.js & npm"
