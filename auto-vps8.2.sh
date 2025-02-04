@@ -176,53 +176,68 @@ install_database() {
 }
 
 # Fungsi untuk menginstal phpMyAdmin
+# Fungsi untuk menginstal phpMyAdmin
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
-    check_and_install_package unzip
-    check_and_install_package wget
+    check_and_install_package curl
+    check_and_install_package nginx
 
+    # Pastikan PHP dan ekstensi yang diperlukan sudah terinstal
+    if [ -z "$selected_php_version" ]; then
+        log_error "PHP belum terinstal. Silakan install PHP terlebih dahulu."
+        return 1
+    fi
+
+    # Install required PHP extensions for the selected version
+    check_and_install_package "php${selected_php_version}-fpm"
+    check_and_install_package "php${selected_php_version}-mbstring"
+    check_and_install_package "php${selected_php_version}-mysql"
+    check_and_install_package "php${selected_php_version}-xml"
+    check_and_install_package "php${selected_php_version}-zip"
+    check_and_install_package "php${selected_php_version}-gd"
+
+    # Input dari user
     read -p "Masukkan domain untuk phpMyAdmin (contoh: pma.domain.com): " domain_name
     read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
-    read -p "Web server yang digunakan (apache/nginx): " web_server
 
-    # Mengubah path ke /var/www/html
+    # Set path instalasi
     pma_path="/var/www/html/${pma_alias}"
-    mkdir -p "${pma_path}"
 
+    # Membuat direktori jika belum ada
+    mkdir -p "$pma_path"
+
+    # Download dan extract phpMyAdmin
     log_info "Mengunduh phpMyAdmin..."
-    wget -qO /tmp/phpmyadmin.zip https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.zip
-    unzip -q /tmp/phpmyadmin.zip -d /tmp/
-    mv /tmp/phpMyAdmin-*-all-languages/* "${pma_path}/"
-    rm -rf /tmp/phpmyadmin.zip /tmp/phpMyAdmin-*-all-languages
+    curl -L https://www.phpmyadmin.net/downloads/phpMyAdmin-latest-all-languages.tar.gz -o /tmp/phpmyadmin.tar.gz
 
-    # Generate random blowfish secret
+    log_info "Mengekstrak file..."
+    tar xzf /tmp/phpmyadmin.tar.gz -C /tmp/
+    mv /tmp/phpMyAdmin-*-all-languages/* "$pma_path/"
+
+    # Generate blowfish secret
     blowfish_secret=$(openssl rand -base64 32)
+
+    # Konfigurasi phpMyAdmin
     cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
-    sed -i "s/\\\$cfg\['blowfish_secret'\] = ''/\\\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
+    sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
 
-    if [ "$web_server" = "nginx" ]; then
-        # Pastikan direktori sites-available ada
-        mkdir -p /etc/nginx/sites-available
-        mkdir -p /etc/nginx/sites-enabled
+    # Buat konfigurasi Nginx
+    log_info "Membuat konfigurasi Nginx..."
 
-        # Buat konfigurasi Nginx
-        cat > "/etc/nginx/sites-available/${domain_name}" << 'EOL'
+    cat > "/etc/nginx/sites-available/${domain_name}" << EOF
 server {
     listen 80;
-    listen [::]:80;
-EOL
-
-        cat >> "/etc/nginx/sites-available/${domain_name}" << EOL
     server_name ${domain_name};
-
-    # Redirect HTTP to HTTPS if not coming from Cloudflare
-    if (\$http_cf_visitor !~ '{"scheme":"https"}') {
-        return 301 https://\$server_name\$request_uri;
-    }
-
     root ${pma_path};
     index index.php index.html index.htm;
 
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+    
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
     set_real_ip_from 103.21.244.0/22;
@@ -239,34 +254,29 @@ EOL
     set_real_ip_from 104.24.0.0/14;
     set_real_ip_from 172.64.0.0/13;
     set_real_ip_from 131.0.72.0/22;
-    set_real_ip_from 2400:cb00::/32;
-    set_real_ip_from 2606:4700::/32;
-    set_real_ip_from 2803:f800::/32;
-    set_real_ip_from 2405:b500::/32;
-    set_real_ip_from 2405:8100::/32;
-    set_real_ip_from 2a06:98c0::/29;
-    set_real_ip_from 2c0f:f248::/32;
-    
     real_ip_header CF-Connecting-IP;
 
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN";
-    add_header X-XSS-Protection "1; mode=block";
-    add_header X-Content-Type-Options "nosniff";
-
     location / {
-        try_files \$uri \$uri/ /index.php?\$args;
+        try_files \$uri \$uri/ =404;
     }
 
     location ~ \.php$ {
-        include snippets/fastcgi-php.conf;
+        try_files \$uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
         
-        # Security for phpMyAdmin
-        fastcgi_intercept_errors on;
+        # Extended timeout
         fastcgi_read_timeout 300;
+        fastcgi_send_timeout 300;
+        fastcgi_connect_timeout 300;
+        
+        # Buffer settings
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 4 256k;
+        fastcgi_busy_buffers_size 256k;
     }
 
     location ~ /\.ht {
@@ -277,86 +287,63 @@ EOL
     location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
         deny all;
     }
+
+    # Logging
+    error_log /var/log/nginx/${domain_name}_error.log;
+    access_log /var/log/nginx/${domain_name}_access.log combined;
 }
-EOL
+EOF
 
-        # Hapus symlink yang mungkin sudah ada
-        rm -f "/etc/nginx/sites-enabled/${domain_name}"
-        
-        # Buat symlink baru
-        ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
-        
-        # Test konfigurasi nginx sebelum restart
-        if nginx -t; then
-            systemctl restart nginx
-            log_info "Konfigurasi Nginx berhasil diterapkan"
-        else
-            log_error "Konfigurasi Nginx tidak valid"
-            return 1
-        fi
+    # Aktifkan konfigurasi
+    ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
 
-    elif [ "$web_server" = "apache" ]; then
-        # Buat konfigurasi Apache
-        cat > "/etc/apache2/sites-available/${domain_name}.conf" << EOL
-<VirtualHost *:80>
-    ServerName ${domain_name}
-    DocumentRoot ${pma_path}
+    # Set permissions
+    chown -R www-data:www-data "$pma_path"
+    find "$pma_path" -type d -exec chmod 755 {} \;
+    find "$pma_path" -type f -exec chmod 644 {} \;
 
-    <Directory ${pma_path}>
-        Options FollowSymLinks
-        AllowOverride All
-        Require all granted
-        
-        # Additional security for phpMyAdmin
-        <IfModule mod_php.c>
-            php_admin_value upload_max_filesize 64M
-            php_admin_value max_execution_time 300
-            php_admin_value max_input_time 300
-            php_admin_value memory_limit 256M
-            php_admin_value post_max_size 64M
-        </IfModule>
-    </Directory>
+    # Bersihkan file temporary
+    rm -rf /tmp/phpmyadmin.tar.gz
+    rm -rf /tmp/phpMyAdmin-*-all-languages
 
-    # Security headers
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-    Header set X-Content-Type-Options "nosniff"
+    # Konfigurasi PHP
+    log_info "Mengkonfigurasi PHP..."
 
-    ErrorLog \${APACHE_LOG_DIR}/${domain_name}_error.log
-    CustomLog \${APACHE_LOG_DIR}/${domain_name}_access.log combined
-</VirtualHost>
-EOL
+    php_ini_path="/etc/php/${selected_php_version}/fpm/php.ini"
+    sed -i 's/^upload_max_filesize.*/upload_max_filesize = 64M/' $php_ini_path
+    sed -i 's/^post_max_size.*/post_max_size = 64M/' $php_ini_path
+    sed -i 's/^memory_limit.*/memory_limit = 256M/' $php_ini_path
+    sed -i 's/^max_execution_time.*/max_execution_time = 300/' $php_ini_path
+    sed -i 's/^max_input_time.*/max_input_time = 300/' $php_ini_path
 
-        # Aktifkan modul headers jika belum aktif
-        a2enmod headers > /dev/null 2>&1
+    # Restart services
+    systemctl restart php${selected_php_version}-fpm
+
+    # Test konfigurasi Nginx dan restart
+    if nginx -t; then
+        systemctl restart nginx
+        log_info "Instalasi phpMyAdmin selesai!"
+        log_info "Akses phpMyAdmin di: http://${domain_name}"
         
-        # Hapus konfigurasi lama jika ada
-        a2dissite "${domain_name}" > /dev/null 2>&1
-        
-        # Aktifkan konfigurasi baru
-        a2ensite "${domain_name}" > /dev/null 2>&1
-        
-        # Test konfigurasi Apache sebelum restart
-        if apache2ctl configtest; then
-            systemctl restart apache2
-            log_info "Konfigurasi Apache berhasil diterapkan"
-        else
-            log_error "Konfigurasi Apache tidak valid"
-            return 1
-        fi
+        # Tampilkan informasi tambahan
+        echo
+        log_info "INFORMASI PENTING:"
+        echo "1. Lokasi instalasi: ${pma_path}"
+        echo "2. Log Nginx: "
+        echo "   - Error: /var/log/nginx/${domain_name}_error.log"
+        echo "   - Access: /var/log/nginx/${domain_name}_access.log"
+        echo "3. Log PHP-FPM: /var/log/php${selected_php_version}-fpm.log"
+        echo
+        log_warning "REKOMENDASI KEAMANAN:"
+        echo "1. Aktifkan SSL/HTTPS melalui Cloudflare"
+        echo "2. Pertimbangkan untuk mengaktifkan basic authentication"
+        echo "3. Batasi akses IP jika memungkinkan"
+        echo "4. Periksa log secara berkala"
     else
-        log_error "Web server tidak valid"
-        return 1
+        log_error "Konfigurasi Nginx tidak valid"
+        exit 1
     fi
-
-    # Set correct permissions
-    chown -R www-data:www-data "${pma_path}"
-    chmod -R 755 "${pma_path}"
-
-    log_info "phpMyAdmin berhasil diinstall!"
-    log_info "Akses phpMyAdmin di: http://${domain_name}"
 }
-
 # Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js..."
