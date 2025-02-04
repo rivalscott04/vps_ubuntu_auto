@@ -176,7 +176,6 @@ install_database() {
 }
 
 # Fungsi untuk menginstal phpMyAdmin
-# Fungsi untuk menginstal phpMyAdmin
 install_phpmyadmin() {
     log_info "Mempersiapkan instalasi phpMyAdmin..."
     check_and_install_package curl
@@ -197,11 +196,12 @@ install_phpmyadmin() {
     check_and_install_package "php${selected_php_version}-gd"
 
     # Input dari user
-    read -p "Masukkan domain untuk phpMyAdmin (contoh: pma.domain.com): " domain_name
-    read -p "Masukkan alias untuk phpMyAdmin (contoh: pma): " pma_alias
+    read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+    read -p "Masukkan nama folder untuk phpMyAdmin [pma]: " pma_folder
+    pma_folder=${pma_folder:-pma}  # Default ke 'pma' jika input kosong
 
     # Set path instalasi
-    pma_path="/var/www/html/${pma_alias}"
+    pma_path="/var/www/html/${domain_name}/${pma_folder}"
 
     # Membuat direktori jika belum ada
     mkdir -p "$pma_path"
@@ -221,14 +221,15 @@ install_phpmyadmin() {
     cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
     sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
 
-    # Buat konfigurasi Nginx
-    log_info "Membuat konfigurasi Nginx..."
-
-    cat > "/etc/nginx/sites-available/${domain_name}" << EOF
+    # Cek apakah konfigurasi nginx untuk domain utama sudah ada
+    nginx_conf="/etc/nginx/sites-available/${domain_name}"
+    if [ ! -f "$nginx_conf" ]; then
+        # Buat konfigurasi baru jika belum ada
+        cat > "$nginx_conf" << EOF
 server {
     listen 80;
     server_name ${domain_name};
-    root ${pma_path};
+    root /var/www/html/${domain_name};
     index index.php index.html index.htm;
 
     # Security headers
@@ -256,10 +257,36 @@ server {
     set_real_ip_from 131.0.72.0/22;
     real_ip_header CF-Connecting-IP;
 
-    location / {
+    # phpMyAdmin location
+    location /${pma_folder} {
         try_files \$uri \$uri/ =404;
+        
+        location ~ \.php$ {
+            try_files \$uri =404;
+            fastcgi_split_path_info ^(.+\.php)(/.+)$;
+            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+            include fastcgi_params;
+            
+            # Extended timeout
+            fastcgi_read_timeout 300;
+            fastcgi_send_timeout 300;
+            fastcgi_connect_timeout 300;
+            
+            # Buffer settings
+            fastcgi_buffer_size 128k;
+            fastcgi_buffers 4 256k;
+            fastcgi_busy_buffers_size 256k;
+        }
+
+        # Deny access to specific phpMyAdmin files
+        location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
+            deny all;
+        }
     }
 
+    # Default PHP handling
     location ~ \.php$ {
         try_files \$uri =404;
         fastcgi_split_path_info ^(.+\.php)(/.+)$;
@@ -267,24 +294,9 @@ server {
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
-        
-        # Extended timeout
-        fastcgi_read_timeout 300;
-        fastcgi_send_timeout 300;
-        fastcgi_connect_timeout 300;
-        
-        # Buffer settings
-        fastcgi_buffer_size 128k;
-        fastcgi_buffers 4 256k;
-        fastcgi_busy_buffers_size 256k;
     }
 
     location ~ /\.ht {
-        deny all;
-    }
-    
-    # Deny access to specific phpMyAdmin files
-    location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
         deny all;
     }
 
@@ -293,9 +305,18 @@ server {
     access_log /var/log/nginx/${domain_name}_access.log combined;
 }
 EOF
-
-    # Aktifkan konfigurasi
-    ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+    else
+        # Backup konfigurasi yang ada
+        cp "$nginx_conf" "${nginx_conf}.backup"
+        
+        # Cek apakah location phpMyAdmin sudah ada
+        if ! grep -q "location /${pma_folder}" "$nginx_conf"; then
+            # Tambahkan konfigurasi phpMyAdmin sebelum location terakhir
+            sed -i "/location \/ {/i\\    # phpMyAdmin location\\n    location /${pma_folder} {\\n        try_files \$uri \$uri/ =404;\\n        \\n        location ~ \\.php$ {\\n            try_files \$uri =404;\\n            fastcgi_split_path_info ^(.+\\.php)(/.+)$;\\n            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;\\n            fastcgi_index index.php;\\n            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;\\n            include fastcgi_params;\\n            \\n            # Extended timeout\\n            fastcgi_read_timeout 300;\\n            fastcgi_send_timeout 300;\\n            fastcgi_connect_timeout 300;\\n            \\n            # Buffer settings\\n            fastcgi_buffer_size 128k;\\n            fastcgi_buffers 4 256k;\\n            fastcgi_busy_buffers_size 256k;\\n        }\\n        \\n        # Deny access to specific phpMyAdmin files\\n        location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {\\n            deny all;\\n        }\\n    }\\n" "$nginx_conf"
+        else
+            log_warning "Konfigurasi phpMyAdmin sudah ada di nginx config"
+        fi
+    fi
 
     # Set permissions
     chown -R www-data:www-data "$pma_path"
@@ -306,24 +327,16 @@ EOF
     rm -rf /tmp/phpmyadmin.tar.gz
     rm -rf /tmp/phpMyAdmin-*-all-languages
 
-    # Konfigurasi PHP
-    log_info "Mengkonfigurasi PHP..."
-
-    php_ini_path="/etc/php/${selected_php_version}/fpm/php.ini"
-    sed -i 's/^upload_max_filesize.*/upload_max_filesize = 64M/' $php_ini_path
-    sed -i 's/^post_max_size.*/post_max_size = 64M/' $php_ini_path
-    sed -i 's/^memory_limit.*/memory_limit = 256M/' $php_ini_path
-    sed -i 's/^max_execution_time.*/max_execution_time = 300/' $php_ini_path
-    sed -i 's/^max_input_time.*/max_input_time = 300/' $php_ini_path
-
-    # Restart services
-    systemctl restart php${selected_php_version}-fpm
+    # Aktifkan konfigurasi jika belum
+    if [ ! -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
+        ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+    fi
 
     # Test konfigurasi Nginx dan restart
     if nginx -t; then
         systemctl restart nginx
         log_info "Instalasi phpMyAdmin selesai!"
-        log_info "Akses phpMyAdmin di: http://${domain_name}"
+        log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
         
         # Tampilkan informasi tambahan
         echo
@@ -339,6 +352,7 @@ EOF
         echo "2. Pertimbangkan untuk mengaktifkan basic authentication"
         echo "3. Batasi akses IP jika memungkinkan"
         echo "4. Periksa log secara berkala"
+        echo "5. Pertimbangkan untuk mengubah nama folder phpMyAdmin dari '${pma_folder}'"
     else
         log_error "Konfigurasi Nginx tidak valid"
         exit 1
