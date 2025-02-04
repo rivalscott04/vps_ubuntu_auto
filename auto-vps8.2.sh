@@ -528,9 +528,10 @@ configure_webapp() {
             log_info "Konfigurasi Nginx untuk ${app_name}.domain.com selesai!"
             ;;
 
-apache)
+"apache")
     log_info "Membuat konfigurasi Apache untuk ${app_name}..."
-
+    
+    # Konfigurasi dasar Apache
     apache_conf="<VirtualHost *:80>
     ServerName ${app_name}.domain.com
     DocumentRoot ${app_path}
@@ -541,6 +542,7 @@ apache)
         Require all granted
     </Directory>"
 
+    # Tambahkan konfigurasi khusus Laravel jika diperlukan
     if [ "$use_laravel" = "y" ]; then
         apache_conf="${apache_conf}
 
@@ -548,7 +550,7 @@ apache)
         AllowOverride All
     </Directory>
 
-    <FilesMatch \.php$>
+    <FilesMatch \.php\$>
         SetHandler \"proxy:unix:/run/php/php${selected_php_version}-fpm.sock|fcgi://localhost/\"
     </FilesMatch>
 
@@ -558,17 +560,19 @@ apache)
     RewriteRule ^ index.php [L]"
     fi
 
+    # Tambahkan konfigurasi log di akhir
     apache_conf="${apache_conf}
 
     ErrorLog \${APACHE_LOG_DIR}/${app_name}_error.log
     CustomLog \${APACHE_LOG_DIR}/${app_name}_access.log combined
 </VirtualHost>"
 
-            echo "$apache_conf" > "/etc/apache2/sites-available/${app_name}.domain.com.conf"
-            a2ensite "${app_name}.domain.com"
-            apache2ctl configtest && systemctl restart apache2
-            log_info "Konfigurasi Apache untuk ${app_name}.domain.com selesai!"
-            ;;
+    # Simpan dan aktifkan konfigurasi
+    echo "$apache_conf" > "/etc/apache2/sites-available/${app_name}.domain.com.conf"
+    a2ensite "${app_name}.domain.com"
+    apache2ctl configtest && systemctl restart apache2
+    log_info "Konfigurasi Apache untuk ${app_name}.domain.com selesai!"
+    ;;
             
         *)
             log_error "Web server tidak valid. Pilih 'apache' atau 'nginx'"
