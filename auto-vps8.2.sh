@@ -100,7 +100,7 @@ install_php() {
     esac
 
     log_info "Menginstal PHP ${selected_php_version} dan ekstensi..."
-    
+
     apt install -y php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
                    php${selected_php_version}-common php${selected_php_version}-mysql php${selected_php_version}-zip \
                    php${selected_php_version}-gd php${selected_php_version}-mbstring php${selected_php_version}-curl \
@@ -145,32 +145,32 @@ install_database() {
                 log_info "Menginstal MariaDB..."
                 apt install -y mariadb-server > /dev/null 2>&1
             fi
-            
+
             mysql_secure_installation
-            
+
             echo "Pilih opsi manajemen user:"
             echo "1. Buat user baru (root tetap ada)"
             echo "2. Hapus root dan buat user baru"
             read -p "Pilihan [1-2]: " user_choice
-            
+
             case $user_choice in
                 1) configure_mysql_user ;;
                 2) mysql_change_root ;;
                 *) log_error "Pilihan tidak valid" ;;
             esac
-            
+
             if [ "$db_choice" = "1" ]; then
                 log_info "MySQL berhasil diinstall!"
             else
                 log_info "MariaDB berhasil diinstall!"
             fi
             ;;
-            
+
         2) log_info "Menginstal PostgreSQL..."
            apt install -y postgresql postgresql-contrib > /dev/null 2>&1
            log_info "PostgreSQL berhasil diinstall!"
            ;;
-           
+
         *) log_error "Pilihan tidak valid" ;;
     esac
 }
@@ -251,7 +251,7 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "no-referrer-when-downgrade" always;
     add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-    
+
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
     set_real_ip_from 103.21.244.0/22;
@@ -273,7 +273,7 @@ server {
     # phpMyAdmin location
     location /${pma_folder} {
         try_files \$uri \$uri/ =404;
-        
+
         location ~ \.php$ {
             try_files \$uri =404;
             fastcgi_split_path_info ^(.+\.php)(/.+)$;
@@ -281,12 +281,12 @@ server {
             fastcgi_index index.php;
             fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
             include fastcgi_params;
-            
+
             # Extended timeout
             fastcgi_read_timeout 300;
             fastcgi_send_timeout 300;
             fastcgi_connect_timeout 300;
-            
+
             # Buffer settings
             fastcgi_buffer_size 128k;
             fastcgi_buffers 4 256k;
@@ -321,7 +321,7 @@ EOF
     else
         # Backup konfigurasi yang ada
         cp "$nginx_conf" "${nginx_conf}.backup"
-        
+
         # Cek apakah location phpMyAdmin sudah ada
         if ! grep -q "location /${pma_folder}" "$nginx_conf"; then
             # Tambahkan konfigurasi phpMyAdmin sebelum location terakhir
@@ -350,7 +350,7 @@ EOF
         systemctl restart nginx
         log_info "Instalasi phpMyAdmin selesai!"
         log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
-        
+
         # Tampilkan informasi tambahan
         echo
         log_info "INFORMASI PENTING:"
@@ -378,10 +378,10 @@ install_nodejs() {
 
     # Tambahkan repository Node.js
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
-    
+
     log_info "Menginstal Node.js dan npm..."
     apt install -y nodejs > /dev/null 2>&1
-    
+
     # Update npm ke versi terbaru
     npm install -g npm@latest > /dev/null 2>&1
 
@@ -437,30 +437,86 @@ EOF
     fi
 }
 
-# Fungsi 7: Konfigurasi Aplikasi Web dengan Laravel Support
+# Fungsi 7: Konfigurasi Aplikasi Web dengan pilihan stack (PHP/Laravel atau JavaScript)
 configure_webapp() {
-    # Tanya nama aplikasi dan path untuk Laravel
-    if [ "$use_laravel" = "y" ]; then
-        read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
-        read -p "Masukkan path aplikasi (default: /var/www/html/$app_name): " custom_path
-        if [ -z "$custom_path" ]; then
-            app_path="/var/www/html/${app_name}/public"
-            full_path="/var/www/html/${app_name}"
-        else
-            app_path="${custom_path}/public"
-            full_path="$custom_path"
-        fi
-        read -p "Masukkan domain (contoh: domain.com): " domain_name
-        log_info "Laravel terdeteksi, root diatur ke: $app_path"
-    else
-        read -p "Masukkan nama folder aplikasi (contoh: myapp): " app_name
-        app_path="/var/www/html/${app_name}"
-        full_path="$app_path"
-        domain_name="${app_name}.domain.com"
+    # Pilih stack teknologi
+    echo "Pilih stack teknologi yang digunakan:"
+    echo "1. PHP (Laravel/PHP Native)"
+    echo "2. JavaScript (Node.js/React/Vue/dll)"
+    read -p "Pilihan [1-2]: " stack_choice
+
+    case $stack_choice in
+        1) stack_type="php" ;;
+        2) stack_type="js" ;;
+        *) log_error "Pilihan tidak valid, menggunakan default (PHP)"; stack_type="php" ;;
+    esac
+
+    # Tanya path aplikasi dan domain
+    read -p "Masukkan path aplikasi (contoh: /var/www/html/namaaplikasi): " app_path
+
+    # Validasi input path
+    if [ -z "$app_path" ]; then
+        log_error "Path aplikasi tidak boleh kosong"
+        return 1
     fi
 
-    read -p "Apakah menggunakan PHP? (y/n): " use_php
-    read -p "Apakah menggunakan SSL/HTTPS? (y/n): " use_ssl
+    # Tanya domain
+    read -p "Masukkan domain (contoh: domain.com): " domain_name
+
+    # Validasi input domain
+    if [ -z "$domain_name" ]; then
+        log_error "Domain tidak boleh kosong"
+        return 1
+    fi
+
+    # Konfigurasi berdasarkan stack yang dipilih
+    if [ "$stack_type" = "php" ]; then
+        # Tanya apakah menggunakan Laravel
+        read -p "Apakah menggunakan Laravel? (y/n): " use_laravel
+
+        # Sesuaikan path untuk Laravel
+        if [ "$use_laravel" = "y" ]; then
+            # Laravel menggunakan /public sebagai document root
+            full_path="$app_path"
+            app_path="${app_path}/public"
+            log_info "Laravel terdeteksi, root diatur ke: $app_path"
+        else
+            full_path="$app_path"
+        fi
+
+        # Deteksi versi PHP yang terinstall
+        if [ -z "$selected_php_version" ]; then
+            # Cek versi PHP yang terinstall
+            for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+                if dpkg -l | grep -q "php$version"; then
+                    selected_php_version="$version"
+                    break
+                fi
+            done
+        fi
+
+        # Pastikan PHP terdeteksi
+        if [ -z "$selected_php_version" ]; then
+            log_error "PHP belum terinstal. Silakan install PHP terlebih dahulu."
+            return 1
+        fi
+
+        log_info "Menggunakan PHP versi ${selected_php_version}"
+    else
+        # JavaScript stack
+        full_path="$app_path"
+
+        # Tanya apakah menggunakan proxy untuk Node.js
+        read -p "Apakah aplikasi berjalan sebagai service Node.js? (y/n): " use_nodejs_service
+
+        if [ "$use_nodejs_service" = "y" ]; then
+            read -p "Port aplikasi Node.js (default: 3000): " nodejs_port
+            nodejs_port=${nodejs_port:-3000}
+            log_info "Konfigurasi proxy untuk Node.js pada port ${nodejs_port}"
+        fi
+    fi
+
+    read -p "Apakah menggunakan SSL/HTTPS via Cloudflare? (y/n): " use_ssl
 
     # Buat direktori jika belum ada
     mkdir -p "$full_path"
@@ -474,8 +530,6 @@ configure_webapp() {
 server {
     listen 80;
     server_name DOMAIN;
-    root APPPATH;
-    index index.php index.html index.htm;
 
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
@@ -500,12 +554,22 @@ server {
     set_real_ip_from 2405:8100::/32;
     set_real_ip_from 2a06:98c0::/29;
     set_real_ip_from 2c0f:f248::/32;
-    
+
     real_ip_header CF-Connecting-IP;
 EOF
 
-    if [ "$use_laravel" = "y" ]; then
+    # Tambahkan konfigurasi berdasarkan stack
+    if [ "$stack_type" = "php" ]; then
+        # Tambahkan root path untuk PHP
         cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+
+    root APPPATH;
+    index index.php index.html index.htm;
+EOF
+
+        if [ "$use_laravel" = "y" ]; then
+            # Konfigurasi untuk Laravel
+            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location / {
         try_files $uri $uri/ /index.php?$query_string;
@@ -521,25 +585,38 @@ EOF
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
         include fastcgi_params;
+
+        # Extended timeout
+        fastcgi_read_timeout 300;
+        fastcgi_send_timeout 300;
+        fastcgi_connect_timeout 300;
+
+        # Buffer settings
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 4 256k;
+        fastcgi_busy_buffers_size 256k;
     }
 
     location ~ /\.(?!well-known).* {
         deny all;
     }
 EOF
-    else
-        cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+        else
+            # Konfigurasi untuk PHP Native
+            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location / {
         try_files $uri $uri/ =404;
     }
-EOF
-        if [ "$use_php" = "y" ]; then
-            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/phpPHPVER-fpm.sock;
+
+        # Extended timeout
+        fastcgi_read_timeout 300;
+        fastcgi_send_timeout 300;
+        fastcgi_connect_timeout 300;
     }
 
     location ~ /\.ht {
@@ -547,25 +624,90 @@ EOF
     }
 EOF
         fi
+    else
+        # Konfigurasi untuk JavaScript
+        if [ "$use_nodejs_service" = "y" ]; then
+            # Konfigurasi proxy untuk Node.js
+            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+
+    location / {
+        proxy_pass http://localhost:NODEJS_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+EOF
+        else
+            # Konfigurasi untuk static files (SPA)
+            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+
+    root APPPATH;
+    index index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache static assets
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+EOF
+        fi
     fi
 
     # Close server block
     cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+
+    # Logging
+    error_log /var/log/nginx/${domain_name}_error.log;
+    access_log /var/log/nginx/${domain_name}_access.log combined;
 }
 EOF
 
     # Replace placeholders
     sed -i "s/DOMAIN/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
     sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
-    sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
+
+    if [ "$stack_type" = "php" ]; then
+        sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
+    elif [ "$use_nodejs_service" = "y" ]; then
+        sed -i "s/NODEJS_PORT/${nodejs_port}/g" "/etc/nginx/sites-available/${domain_name}"
+    fi
 
     # Create symlink and test config
     ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
-    nginx -t && systemctl restart nginx
 
-    log_info "Konfigurasi aplikasi web selesai!"
-    if [ "$use_ssl" = "y" ]; then
-        log_info "SSL telah dikonfigurasi untuk ${domain_name}"
+    # Test and reload nginx
+    if nginx -t; then
+        systemctl restart nginx
+        log_info "Konfigurasi aplikasi web selesai!"
+        log_info "Domain: ${domain_name}"
+        log_info "Path aplikasi: ${app_path}"
+
+        if [ "$stack_type" = "php" ]; then
+            log_info "Stack: PHP"
+            if [ "$use_laravel" = "y" ]; then
+                log_info "Framework: Laravel"
+            fi
+        else
+            log_info "Stack: JavaScript"
+            if [ "$use_nodejs_service" = "y" ]; then
+                log_info "Node.js service pada port: ${nodejs_port}"
+            fi
+        fi
+
+        if [ "$use_ssl" = "y" ]; then
+            log_info "SSL/HTTPS via Cloudflare telah dikonfigurasi"
+        fi
+    else
+        log_error "Konfigurasi Nginx tidak valid, silakan periksa kembali"
     fi
 }
 
@@ -575,7 +717,7 @@ configure_php() {
     if [ -z "$php_version" ]; then
         php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
     fi
-    
+
     php_ini_file="/etc/php/${php_version}/fpm/php.ini"
     php_fpm_file="/etc/php/${php_version}/fpm/pool.d/www.conf"
 
@@ -619,7 +761,7 @@ configure_php() {
 # Fungsi untuk menghapus root dan membuat user baru MySQL
 mysql_change_root() {
     log_info "Konfigurasi penggantian user root MySQL..."
-    
+
     # Input untuk user baru
     read -p "Masukkan username MySQL baru: " mysql_user
     read -s -p "Masukkan password untuk user $mysql_user: " mysql_pass
@@ -629,15 +771,15 @@ mysql_change_root() {
     mysql -e "CREATE USER '${mysql_user}'@'localhost' IDENTIFIED BY '${mysql_pass}';"
     mysql -e "GRANT ALL PRIVILEGES ON *.* TO '${mysql_user}'@'localhost' WITH GRANT OPTION;"
     mysql -e "FLUSH PRIVILEGES;"
-    
+
     if [ $? -eq 0 ]; then
         # Hapus user root
         mysql -e "DROP USER 'root'@'localhost';"
         mysql -e "FLUSH PRIVILEGES;"
-        
+
         if [ $? -eq 0 ]; then
             log_info "User root berhasil dihapus dan diganti dengan user ${mysql_user}"
-            
+
             # Buat file konfigurasi untuk user baru
             cat > ~/.my.cnf << EOL
 [client]
@@ -645,7 +787,7 @@ user=${mysql_user}
 password=${mysql_pass}
 EOL
             chmod 600 ~/.my.cnf
-            
+
             log_info "File konfigurasi MySQL telah dibuat di ~/.my.cnf"
         else
             log_error "Gagal menghapus user root"
@@ -665,21 +807,21 @@ show_system_info() {
     echo "CPU: $(grep "model name" /proc/cpuinfo | head -n1 | cut -d: -f2)"
     echo "RAM: $(free -h | awk '/^Mem:/ {print $2}')"
     echo "Disk: $(df -h / | awk 'NR==2 {print $2}')"
-    
+
     if command -v php > /dev/null; then
         echo "PHP Version: $(php -v | head -n1)"
     fi
-    
+
     if command -v mysql > /dev/null; then
         echo "MySQL Version: $(mysql --version)"
     fi
-    
+
     if command -v nginx > /dev/null; then
         echo "Nginx Version: $(nginx -v 2>&1)"
     elif command -v apache2 > /dev/null; then
         echo "Apache Version: $(apache2 -v | head -n1)"
     fi
-    
+
     if command -v node > /dev/null; then
         echo "Node.js Version: $(node -v)"
         echo "NPM Version: $(npm -v)"
