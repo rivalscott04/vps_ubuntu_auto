@@ -208,13 +208,42 @@ install_phpmyadmin() {
     check_and_install_package "php${selected_php_version}-zip"
     check_and_install_package "php${selected_php_version}-gd"
 
-    # Input dari user
-    read -p "Masukkan domain utama (contoh: domain.com): " domain_name
-    read -p "Masukkan nama folder untuk phpMyAdmin [pma]: " pma_folder
-    pma_folder=${pma_folder:-pma}  # Default ke 'pma' jika input kosong
+    # Pilihan instalasi: subdomain atau subfolder
+    echo "Pilih metode instalasi phpMyAdmin:"
+    echo "1. Gunakan subdomain (contoh: pma.domain.com)"
+    echo "2. Gunakan subfolder (contoh: domain.com/pma)"
+    read -p "Pilihan [1-2]: " pma_install_method
 
-    # Set path instalasi
-    pma_path="/var/www/html/${domain_name}/${pma_folder}"
+    case $pma_install_method in
+        1) use_subdomain=true ;;
+        2) use_subdomain=false ;;
+        *) log_warning "Pilihan tidak valid, menggunakan default (subfolder)"; use_subdomain=false ;;
+    esac
+
+    if [ "$use_subdomain" = true ]; then
+        # Konfigurasi untuk subdomain
+        read -p "Masukkan domain utama (contoh: domain.com): " main_domain
+        read -p "Masukkan subdomain untuk phpMyAdmin (contoh: pma): " pma_subdomain
+
+        # Default ke 'pma' jika input kosong
+        pma_subdomain=${pma_subdomain:-pma}
+
+        # Buat domain lengkap
+        domain_name="${pma_subdomain}.${main_domain}"
+
+        # Set path instalasi
+        pma_path="/var/www/html/${domain_name}"
+    else
+        # Konfigurasi untuk subfolder
+        read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+        read -p "Masukkan nama folder untuk phpMyAdmin [pma]: " pma_folder
+
+        # Default ke 'pma' jika input kosong
+        pma_folder=${pma_folder:-pma}
+
+        # Set path instalasi
+        pma_path="/var/www/html/${domain_name}/${pma_folder}"
+    fi
 
     # Membuat direktori jika belum ada
     mkdir -p "$pma_path"
@@ -234,11 +263,102 @@ install_phpmyadmin() {
     cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
     sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
 
-    # Cek apakah konfigurasi nginx untuk domain utama sudah ada
+    # Tanya apakah menggunakan SSL/HTTPS via Cloudflare
+    read -p "Apakah menggunakan SSL/HTTPS via Cloudflare? (y/n): " use_ssl
+
+    # Hapus referensi ke weding.domain.com jika ada
+    if [ -f "/etc/nginx/sites-enabled/weding.domain.com" ]; then
+        log_warning "Menghapus referensi ke weding.domain.com..."
+        rm -f "/etc/nginx/sites-enabled/weding.domain.com"
+    fi
+
+    # Konfigurasi Nginx
     nginx_conf="/etc/nginx/sites-available/${domain_name}"
-    if [ ! -f "$nginx_conf" ]; then
-        # Buat konfigurasi baru jika belum ada
+
+    if [ "$use_subdomain" = true ]; then
+        # Konfigurasi untuk subdomain
         cat > "$nginx_conf" << EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    root ${pma_path};
+    index index.php index.html index.htm;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+    # Cloudflare SSL configuration
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    real_ip_header CF-Connecting-IP;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+
+    # PHP handling
+    location ~ \.php$ {
+        try_files \$uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+
+        # Extended timeout
+        fastcgi_read_timeout 300;
+        fastcgi_send_timeout 300;
+        fastcgi_connect_timeout 300;
+
+        # Buffer settings
+        fastcgi_buffer_size 128k;
+        fastcgi_buffers 4 256k;
+        fastcgi_busy_buffers_size 256k;
+    }
+
+    # Deny access to specific phpMyAdmin files
+    location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {
+        deny all;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    # Logging
+    error_log /var/log/nginx/${domain_name}_error.log;
+    access_log /var/log/nginx/${domain_name}_access.log combined;
+}
+EOF
+    else
+        # Konfigurasi untuk subfolder
+        if [ ! -f "$nginx_conf" ]; then
+            # Buat konfigurasi baru jika belum ada
+            cat > "$nginx_conf" << EOF
 server {
     listen 80;
     server_name ${domain_name};
@@ -268,6 +388,13 @@ server {
     set_real_ip_from 104.24.0.0/14;
     set_real_ip_from 172.64.0.0/13;
     set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
     real_ip_header CF-Connecting-IP;
 
     # phpMyAdmin location
@@ -318,16 +445,17 @@ server {
     access_log /var/log/nginx/${domain_name}_access.log combined;
 }
 EOF
-    else
-        # Backup konfigurasi yang ada
-        cp "$nginx_conf" "${nginx_conf}.backup"
-
-        # Cek apakah location phpMyAdmin sudah ada
-        if ! grep -q "location /${pma_folder}" "$nginx_conf"; then
-            # Tambahkan konfigurasi phpMyAdmin sebelum location terakhir
-            sed -i "/location \/ {/i\\    # phpMyAdmin location\\n    location /${pma_folder} {\\n        try_files \$uri \$uri/ =404;\\n        \\n        location ~ \\.php$ {\\n            try_files \$uri =404;\\n            fastcgi_split_path_info ^(.+\\.php)(/.+)$;\\n            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;\\n            fastcgi_index index.php;\\n            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;\\n            include fastcgi_params;\\n            \\n            # Extended timeout\\n            fastcgi_read_timeout 300;\\n            fastcgi_send_timeout 300;\\n            fastcgi_connect_timeout 300;\\n            \\n            # Buffer settings\\n            fastcgi_buffer_size 128k;\\n            fastcgi_buffers 4 256k;\\n            fastcgi_busy_buffers_size 256k;\\n        }\\n        \\n        # Deny access to specific phpMyAdmin files\\n        location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {\\n            deny all;\\n        }\\n    }\\n" "$nginx_conf"
         else
-            log_warning "Konfigurasi phpMyAdmin sudah ada di nginx config"
+            # Backup konfigurasi yang ada
+            cp "$nginx_conf" "${nginx_conf}.backup"
+
+            # Cek apakah location phpMyAdmin sudah ada
+            if ! grep -q "location /${pma_folder}" "$nginx_conf"; then
+                # Tambahkan konfigurasi phpMyAdmin sebelum location terakhir
+                sed -i "/location \/ {/i\\    # phpMyAdmin location\\n    location /${pma_folder} {\\n        try_files \$uri \$uri/ =404;\\n        \\n        location ~ \\.php$ {\\n            try_files \$uri =404;\\n            fastcgi_split_path_info ^(.+\\.php)(/.+)$;\\n            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;\\n            fastcgi_index index.php;\\n            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;\\n            include fastcgi_params;\\n            \\n            # Extended timeout\\n            fastcgi_read_timeout 300;\\n            fastcgi_send_timeout 300;\\n            fastcgi_connect_timeout 300;\\n            \\n            # Buffer settings\\n            fastcgi_buffer_size 128k;\\n            fastcgi_buffers 4 256k;\\n            fastcgi_busy_buffers_size 256k;\\n        }\\n        \\n        # Deny access to specific phpMyAdmin files\\n        location ~ ^/(README|COPYING|LICENSE|RELEASE-DATE-|CHANGE|INSTALL|CONFIG|setup)$ {\\n            deny all;\\n        }\\n    }\\n" "$nginx_conf"
+            else
+                log_warning "Konfigurasi phpMyAdmin sudah ada di nginx config"
+            fi
         fi
     fi
 
@@ -348,8 +476,22 @@ EOF
     # Test konfigurasi Nginx dan restart
     if nginx -t; then
         systemctl restart nginx
-        log_info "Instalasi phpMyAdmin selesai!"
-        log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
+
+        if [ "$use_subdomain" = true ]; then
+            log_info "Instalasi phpMyAdmin dengan subdomain selesai!"
+            log_info "Akses phpMyAdmin di: http://${domain_name}"
+
+            if [ "$use_ssl" = "y" ]; then
+                log_info "Atau dengan HTTPS: https://${domain_name}"
+            fi
+        else
+            log_info "Instalasi phpMyAdmin dengan subfolder selesai!"
+            log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
+
+            if [ "$use_ssl" = "y" ]; then
+                log_info "Atau dengan HTTPS: https://${domain_name}/${pma_folder}"
+            fi
+        fi
 
         # Tampilkan informasi tambahan
         echo
@@ -365,10 +507,15 @@ EOF
         echo "2. Pertimbangkan untuk mengaktifkan basic authentication"
         echo "3. Batasi akses IP jika memungkinkan"
         echo "4. Periksa log secara berkala"
-        echo "5. Pertimbangkan untuk mengubah nama folder phpMyAdmin dari '${pma_folder}'"
+
+        if [ "$use_subdomain" = false ]; then
+            echo "5. Pertimbangkan untuk mengubah nama folder phpMyAdmin dari '${pma_folder}'"
+        fi
     else
-        log_error "Konfigurasi Nginx tidak valid"
-        exit 1
+        log_error "Konfigurasi Nginx tidak valid, silakan periksa kembali"
+        # If test fails, remove the symlink to prevent future errors
+        rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        return 1
     fi
 }
 # Fungsi 5: Instalasi Node.js & npm
