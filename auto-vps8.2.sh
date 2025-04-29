@@ -340,6 +340,9 @@ EOF
     rm -rf /tmp/phpmyadmin.tar.gz
     rm -rf /tmp/phpMyAdmin-*-all-languages
 
+    # Bersihkan konfigurasi Nginx yang tidak valid terlebih dahulu
+    cleanup_nginx_configs
+
     # Aktifkan konfigurasi jika belum
     if [ ! -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
         ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
@@ -367,8 +370,10 @@ EOF
         echo "4. Periksa log secara berkala"
         echo "5. Pertimbangkan untuk mengubah nama folder phpMyAdmin dari '${pma_folder}'"
     else
-        log_error "Konfigurasi Nginx tidak valid"
-        exit 1
+        log_error "Konfigurasi Nginx tidak valid, silakan periksa kembali"
+        # If test fails, remove the symlink to prevent future errors
+        rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        return 1
     fi
 }
 # Fungsi 5: Instalasi Node.js & npm
@@ -437,8 +442,42 @@ EOF
     fi
 }
 
+# Fungsi untuk membersihkan konfigurasi Nginx yang tidak valid
+cleanup_nginx_configs() {
+    log_info "Memeriksa konfigurasi Nginx yang tidak valid..."
+
+    # Cek apakah ada file konfigurasi yang tidak valid
+    if [ -f "/etc/nginx/sites-enabled/weding.domain.com" ]; then
+        log_warning "Menemukan konfigurasi lama 'weding.domain.com', menghapus..."
+        rm -f "/etc/nginx/sites-enabled/weding.domain.com"
+    fi
+
+    # Cek semua file di sites-enabled
+    for config in /etc/nginx/sites-enabled/*; do
+        if [ -f "$config" ]; then
+            config_name=$(basename "$config")
+            # Cek apakah file konfigurasi valid
+            if ! nginx -t -c "$config" > /dev/null 2>&1; then
+                log_warning "Menemukan konfigurasi tidak valid: $config_name, menghapus..."
+                rm -f "$config"
+            fi
+        fi
+    done
+
+    # Pastikan nginx.conf valid
+    if ! nginx -t > /dev/null 2>&1; then
+        log_warning "Konfigurasi utama Nginx tidak valid, mencoba memperbaiki..."
+        # Hapus semua symlink di sites-enabled untuk memastikan konfigurasi bersih
+        rm -f /etc/nginx/sites-enabled/*
+    fi
+
+    log_info "Pemeriksaan konfigurasi Nginx selesai."
+}
+
 # Fungsi 7: Konfigurasi Aplikasi Web dengan pilihan stack (PHP/Laravel atau JavaScript)
 configure_webapp() {
+    # Bersihkan konfigurasi Nginx yang tidak valid terlebih dahulu
+    cleanup_nginx_configs
     # Pilih stack teknologi
     echo "Pilih stack teknologi yang digunakan:"
     echo "1. PHP (Laravel/PHP Native)"
@@ -663,7 +702,7 @@ EOF
     fi
 
     # Close server block
-    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+    cat >> "/etc/nginx/sites-available/${domain_name}" << EOF
 
     # Logging
     error_log /var/log/nginx/${domain_name}_error.log;
@@ -679,6 +718,14 @@ EOF
         sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
     elif [ "$use_nodejs_service" = "y" ]; then
         sed -i "s/NODEJS_PORT/${nodejs_port}/g" "/etc/nginx/sites-available/${domain_name}"
+    fi
+
+    # Check for existing configurations and clean up if needed
+
+    # Check if there's already a configuration for this domain
+    if [ -f "/etc/nginx/sites-available/${domain_name}" ]; then
+        log_info "Konfigurasi untuk domain ${domain_name} sudah ada, membuat backup..."
+        cp "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-available/${domain_name}.backup.$(date +%Y%m%d%H%M%S)"
     fi
 
     # Create symlink and test config
@@ -708,6 +755,8 @@ EOF
         fi
     else
         log_error "Konfigurasi Nginx tidak valid, silakan periksa kembali"
+        # If test fails, remove the symlink to prevent future errors
+        rm -f "/etc/nginx/sites-enabled/${domain_name}"
     fi
 }
 
