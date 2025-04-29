@@ -1011,35 +1011,32 @@ EOF
 
     # Tampilkan informasi domain
     if [ "$domain_type" = "1" ]; then
-            log_info "Domain utama: ${domain_name}"
+        log_info "Domain utama: ${domain_name}"
+    else
+        log_info "Subdomain: ${domain_name} (dari domain utama ${main_domain})"
+    fi
+
+    log_info "Path aplikasi: ${app_path}"
+
+    if [ "$stack_type" = "php" ]; then
+        if [ "$use_laravel" = "y" ]; then
+            log_info "Stack: Laravel"
+            log_info "Document root: ${app_path} (public folder)"
         else
-            log_info "Subdomain: ${domain_name} (dari domain utama ${main_domain})"
-        fi
-
-        log_info "Path aplikasi: ${app_path}"
-
-        if [ "$stack_type" = "php" ]; then
-            if [ "$use_laravel" = "y" ]; then
-                log_info "Stack: Laravel"
-                log_info "Document root: ${app_path} (public folder)"
-            else
-                log_info "Stack: PHP Native"
-                log_info "Document root: ${app_path}"
-            fi
-        else
-            log_info "Stack: JavaScript"
-            if [ "$use_nodejs_service" = "y" ]; then
-                log_info "Node.js service pada port: ${nodejs_port}"
-            else
-                log_info "Static JavaScript (SPA)"
-            fi
-        fi
-
-        if [ "$use_ssl" = "y" ]; then
-            log_info "SSL/HTTPS via Cloudflare telah dikonfigurasi"
+            log_info "Stack: PHP Native"
+            log_info "Document root: ${app_path}"
         fi
     else
-        log_error "Konfigurasi Nginx tidak valid, silakan periksa kembali"
+        log_info "Stack: JavaScript"
+        if [ "$use_nodejs_service" = "y" ]; then
+            log_info "Node.js service pada port: ${nodejs_port}"
+        else
+            log_info "Static JavaScript (SPA)"
+        fi
+    fi
+
+    if [ "$use_ssl" = "y" ]; then
+        log_info "SSL/HTTPS via Cloudflare telah dikonfigurasi"
     fi
 }
 
