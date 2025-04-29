@@ -468,70 +468,89 @@ EOF
     rm -rf /tmp/phpmyadmin.tar.gz
     rm -rf /tmp/phpMyAdmin-*-all-languages
 
-    # Tanya apakah ingin mengaktifkan konfigurasi
-    read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
-
-    if [ "$enable_config" = "y" ]; then
-        # Create symlink if not exists
-        if [ ! -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
-            ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
-        fi
-        log_info "Konfigurasi ${domain_name} diaktifkan"
-    else
-        # Remove symlink if exists
-        if [ -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
-            rm -f "/etc/nginx/sites-enabled/${domain_name}"
-        fi
-        log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di ${nginx_conf}"
-        log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf ${nginx_conf} /etc/nginx/sites-enabled/"
-    fi
-
-    # Test konfigurasi Nginx dan restart
+    # Test konfigurasi Nginx
+    log_info "Menguji konfigurasi Nginx..."
     if nginx -t; then
-        systemctl restart nginx
+        log_info "Konfigurasi Nginx valid!"
 
-        if [ "$use_subdomain" = true ]; then
-            log_info "Instalasi phpMyAdmin dengan subdomain selesai!"
-            log_info "Akses phpMyAdmin di: http://${domain_name}"
+        # Tanya apakah ingin mengaktifkan konfigurasi
+        read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
 
-            if [ "$use_ssl" = "y" ]; then
-                log_info "Atau dengan HTTPS: https://${domain_name}"
+        if [ "$enable_config" = "y" ]; then
+            # Create symlink if not exists
+            if [ ! -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
+                ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+            fi
+            log_info "Konfigurasi ${domain_name} diaktifkan"
+
+            # Tanya apakah ingin restart Nginx
+            read -p "Restart service Nginx sekarang? (y/n): " restart_nginx
+
+            if [ "$restart_nginx" = "y" ]; then
+                systemctl restart nginx
+                log_info "Service Nginx berhasil di-restart"
+            else
+                log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
+                log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
             fi
         else
-            log_info "Instalasi phpMyAdmin dengan subfolder selesai!"
-            log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
-
-            if [ "$use_ssl" = "y" ]; then
-                log_info "Atau dengan HTTPS: https://${domain_name}/${pma_folder}"
+            # Remove symlink if exists
+            if [ -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
+                rm -f "/etc/nginx/sites-enabled/${domain_name}"
             fi
-        fi
-
-        # Tambahkan substitusi untuk DOMAIN_NAME
-        sed -i "s/DOMAIN_NAME/${domain_name}/g" "$nginx_conf"
-
-        # Tampilkan informasi tambahan
-        echo
-        log_info "INFORMASI PENTING:"
-        echo "1. Lokasi instalasi: ${pma_path}"
-        echo "2. Log Nginx: "
-        echo "   - Error: /var/log/nginx/${domain_name}_error.log"
-        echo "   - Access: /var/log/nginx/${domain_name}_access.log"
-        echo "3. Log PHP-FPM: /var/log/php${selected_php_version}-fpm.log"
-        echo
-        log_warning "REKOMENDASI KEAMANAN:"
-        echo "1. Aktifkan SSL/HTTPS melalui Cloudflare"
-        echo "2. Pertimbangkan untuk mengaktifkan basic authentication"
-        echo "3. Batasi akses IP jika memungkinkan"
-        echo "4. Periksa log secara berkala"
-
-        if [ "$use_subdomain" = false ]; then
-            echo "5. Pertimbangkan untuk mengubah nama folder phpMyAdmin dari '${pma_folder}'"
+            log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di ${nginx_conf}"
+            log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf ${nginx_conf} /etc/nginx/sites-enabled/"
         fi
     else
-        log_error "Konfigurasi Nginx tidak valid, silakan periksa kembali"
-        # If test fails, remove the symlink to prevent future errors
-        rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        log_error "Konfigurasi Nginx tidak valid!"
+        read -p "Hapus konfigurasi yang tidak valid? (y/n): " remove_config
+
+        if [ "$remove_config" = "y" ]; then
+            rm -f "$nginx_conf"
+            log_info "Konfigurasi yang tidak valid telah dihapus"
+        else
+            log_warning "Konfigurasi yang tidak valid tetap disimpan di ${nginx_conf}"
+            log_warning "Silakan perbaiki konfigurasi secara manual"
+        fi
         return 1
+    fi
+
+    if [ "$use_subdomain" = true ]; then
+        log_info "Instalasi phpMyAdmin dengan subdomain selesai!"
+        log_info "Akses phpMyAdmin di: http://${domain_name}"
+
+        if [ "$use_ssl" = "y" ]; then
+            log_info "Atau dengan HTTPS: https://${domain_name}"
+        fi
+    else
+        log_info "Instalasi phpMyAdmin dengan subfolder selesai!"
+        log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
+
+        if [ "$use_ssl" = "y" ]; then
+            log_info "Atau dengan HTTPS: https://${domain_name}/${pma_folder}"
+        fi
+    fi
+
+    # Tambahkan substitusi untuk DOMAIN_NAME
+    sed -i "s/DOMAIN_NAME/${domain_name}/g" "$nginx_conf"
+
+    # Tampilkan informasi tambahan
+    echo
+    log_info "INFORMASI PENTING:"
+    echo "1. Lokasi instalasi: ${pma_path}"
+    echo "2. Log Nginx: "
+    echo "   - Error: /var/log/nginx/${domain_name}_error.log"
+    echo "   - Access: /var/log/nginx/${domain_name}_access.log"
+    echo "3. Log PHP-FPM: /var/log/php${selected_php_version}-fpm.log"
+    echo
+    log_warning "REKOMENDASI KEAMANAN:"
+    echo "1. Aktifkan SSL/HTTPS melalui Cloudflare"
+    echo "2. Pertimbangkan untuk mengaktifkan basic authentication"
+    echo "3. Batasi akses IP jika memungkinkan"
+    echo "4. Periksa log secara berkala"
+
+    if [ "$use_subdomain" = false ]; then
+        echo "5. Pertimbangkan untuk mengubah nama folder phpMyAdmin dari '${pma_folder}'"
     fi
 }
 # Fungsi 5: Instalasi Node.js & npm
@@ -643,8 +662,27 @@ configure_webapp() {
         return 1
     fi
 
-    # Tanya domain
-    read -p "Masukkan domain (contoh: domain.com): " domain_name
+    # Tanya jenis domain
+    echo "Pilih jenis domain:"
+    echo "1. Domain utama (contoh: domain.com)"
+    echo "2. Subdomain (contoh: app.domain.com)"
+    read -p "Pilihan [1-2]: " domain_type
+
+    case $domain_type in
+        1)
+            read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+            ;;
+        2)
+            read -p "Masukkan domain utama (contoh: domain.com): " main_domain
+            read -p "Masukkan subdomain (contoh: app): " subdomain
+            domain_name="${subdomain}.${main_domain}"
+            log_info "Menggunakan subdomain: ${domain_name}"
+            ;;
+        *)
+            log_error "Pilihan tidak valid, menggunakan domain utama"
+            read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+            ;;
+    esac
 
     # Validasi input domain
     if [ -z "$domain_name" ]; then
@@ -928,23 +966,56 @@ EOF
         rm -f "/etc/nginx/sites-enabled/weding.domain.com"
     fi
 
-    # Tanya apakah ingin mengaktifkan konfigurasi
-    read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
+    # Test konfigurasi Nginx
+    log_info "Menguji konfigurasi Nginx..."
+    if nginx -t; then
+        log_info "Konfigurasi Nginx valid!"
 
-    if [ "$enable_config" = "y" ]; then
-        # Create symlink and test config
-        ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
-        log_info "Konfigurasi ${domain_name} diaktifkan"
+        # Tanya apakah ingin mengaktifkan konfigurasi
+        read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
+
+        if [ "$enable_config" = "y" ]; then
+            # Create symlink
+            ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+            log_info "Konfigurasi ${domain_name} diaktifkan"
+
+            # Tanya apakah ingin restart Nginx
+            read -p "Restart service Nginx sekarang? (y/n): " restart_nginx
+
+            if [ "$restart_nginx" = "y" ]; then
+                systemctl restart nginx
+                log_info "Service Nginx berhasil di-restart"
+            else
+                log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
+                log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
+            fi
+        else
+            log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di /etc/nginx/sites-available/${domain_name}"
+            log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/"
+        fi
     else
-        log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di /etc/nginx/sites-available/${domain_name}"
-        log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/"
+        log_error "Konfigurasi Nginx tidak valid!"
+        read -p "Hapus konfigurasi yang tidak valid? (y/n): " remove_config
+
+        if [ "$remove_config" = "y" ]; then
+            rm -f "/etc/nginx/sites-available/${domain_name}"
+            log_info "Konfigurasi yang tidak valid telah dihapus"
+        else
+            log_warning "Konfigurasi yang tidak valid tetap disimpan di /etc/nginx/sites-available/${domain_name}"
+            log_warning "Silakan perbaiki konfigurasi secara manual"
+        fi
+        return 1
     fi
 
-    # Test and reload nginx
-    if nginx -t; then
-        systemctl restart nginx
-        log_info "Konfigurasi aplikasi web selesai!"
-        log_info "Domain: ${domain_name}"
+    log_info "Konfigurasi aplikasi web selesai!"
+
+    # Tampilkan informasi domain
+    if [ "$domain_type" = "1" ]; then
+            log_info "Domain utama: ${domain_name}"
+        else
+            log_info "Subdomain: ${domain_name} (dari domain utama ${main_domain})"
+        fi
+
         log_info "Path aplikasi: ${app_path}"
 
         if [ "$stack_type" = "php" ]; then
