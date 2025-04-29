@@ -350,8 +350,8 @@ server {
     }
 
     # Logging
-    error_log /var/log/nginx/${domain_name}_error.log;
-    access_log /var/log/nginx/${domain_name}_access.log combined;
+    error_log /var/log/nginx/DOMAIN_NAME_error.log;
+    access_log /var/log/nginx/DOMAIN_NAME_access.log combined;
 }
 EOF
     else
@@ -441,8 +441,8 @@ server {
     }
 
     # Logging
-    error_log /var/log/nginx/${domain_name}_error.log;
-    access_log /var/log/nginx/${domain_name}_access.log combined;
+    error_log /var/log/nginx/DOMAIN_NAME_error.log;
+    access_log /var/log/nginx/DOMAIN_NAME_access.log combined;
 }
 EOF
         else
@@ -468,9 +468,22 @@ EOF
     rm -rf /tmp/phpmyadmin.tar.gz
     rm -rf /tmp/phpMyAdmin-*-all-languages
 
-    # Aktifkan konfigurasi jika belum
-    if [ ! -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
-        ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+    # Tanya apakah ingin mengaktifkan konfigurasi
+    read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
+
+    if [ "$enable_config" = "y" ]; then
+        # Create symlink if not exists
+        if [ ! -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
+            ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+        fi
+        log_info "Konfigurasi ${domain_name} diaktifkan"
+    else
+        # Remove symlink if exists
+        if [ -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
+            rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        fi
+        log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di ${nginx_conf}"
+        log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf ${nginx_conf} /etc/nginx/sites-enabled/"
     fi
 
     # Test konfigurasi Nginx dan restart
@@ -492,6 +505,9 @@ EOF
                 log_info "Atau dengan HTTPS: https://${domain_name}/${pma_folder}"
             fi
         fi
+
+        # Tambahkan substitusi untuk DOMAIN_NAME
+        sed -i "s/DOMAIN_NAME/${domain_name}/g" "$nginx_conf"
 
         # Tampilkan informasi tambahan
         echo
@@ -520,28 +536,31 @@ EOF
 }
 # Fungsi 5: Instalasi Node.js & npm
 install_nodejs() {
-    log_info "Mempersiapkan instalasi Node.js..."
+    log_info "Mempersiapkan instalasi Node.js dan npm..."
     check_and_install_package curl
 
     # Tambahkan repository Node.js
+    log_info "Menambahkan repository Node.js..."
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
 
     log_info "Menginstal Node.js dan npm..."
     apt install -y nodejs > /dev/null 2>&1
 
     # Update npm ke versi terbaru
+    log_info "Mengupdate npm ke versi terbaru..."
     npm install -g npm@latest > /dev/null 2>&1
 
     # Install beberapa package global yang umum digunakan
-    log_info "Menginstal package global..."
+    log_info "Menginstal package global (pm2, yarn)..."
     npm install -g pm2 yarn > /dev/null 2>&1
 
     if command -v node > /dev/null; then
         node_version=$(node -v)
         npm_version=$(npm -v)
         log_info "Node.js ${node_version} dan npm ${npm_version} berhasil diinstall!"
+        log_info "Package global yang terinstall: pm2, yarn"
     else
-        log_error "Gagal menginstal Node.js"
+        log_error "Gagal menginstal Node.js dan npm"
     fi
 }
 
@@ -588,14 +607,31 @@ EOF
 configure_webapp() {
     # Pilih stack teknologi
     echo "Pilih stack teknologi yang digunakan:"
-    echo "1. PHP (Laravel/PHP Native)"
-    echo "2. JavaScript (Node.js/React/Vue/dll)"
-    read -p "Pilihan [1-2]: " stack_choice
+    echo "1. PHP Native"
+    echo "2. Laravel"
+    echo "3. JavaScript (Node.js/React/Vue/dll)"
+    read -p "Pilihan [1-3]: " stack_choice
 
     case $stack_choice in
-        1) stack_type="php" ;;
-        2) stack_type="js" ;;
-        *) log_error "Pilihan tidak valid, menggunakan default (PHP)"; stack_type="php" ;;
+        1)
+            stack_type="php"
+            use_laravel="n"
+            log_info "Stack PHP Native dipilih"
+            ;;
+        2)
+            stack_type="php"
+            use_laravel="y"
+            log_info "Stack Laravel dipilih"
+            ;;
+        3)
+            stack_type="js"
+            log_info "Stack JavaScript dipilih"
+            ;;
+        *)
+            log_error "Pilihan tidak valid, menggunakan default (PHP Native)"
+            stack_type="php"
+            use_laravel="n"
+            ;;
     esac
 
     # Tanya path aplikasi dan domain
@@ -618,9 +654,6 @@ configure_webapp() {
 
     # Konfigurasi berdasarkan stack yang dipilih
     if [ "$stack_type" = "php" ]; then
-        # Tanya apakah menggunakan Laravel
-        read -p "Apakah menggunakan Laravel? (y/n): " use_laravel
-
         # Sesuaikan path untuk Laravel
         if [ "$use_laravel" = "y" ]; then
             # Laravel menggunakan /public sebagai document root
@@ -629,6 +662,7 @@ configure_webapp() {
             log_info "Laravel terdeteksi, root diatur ke: $app_path"
         else
             full_path="$app_path"
+            log_info "PHP Native terdeteksi, root diatur ke: $app_path"
         fi
 
         # Deteksi versi PHP yang terinstall
@@ -669,6 +703,57 @@ configure_webapp() {
     mkdir -p "$full_path"
     chown -R www-data:www-data "$full_path"
     chmod -R 755 "$full_path"
+
+    # Buat file error page dasar jika PHP Native
+    if [ "$stack_type" = "php" ] && [ "$use_laravel" = "n" ]; then
+        log_info "Membuat file error page dasar untuk PHP Native..."
+
+        # Buat file 404.html jika belum ada
+        if [ ! -f "${full_path}/404.html" ]; then
+            cat > "${full_path}/404.html" << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>404 - Halaman Tidak Ditemukan</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        h1 { font-size: 36px; margin-bottom: 20px; }
+        p { font-size: 18px; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>404 - Halaman Tidak Ditemukan</h1>
+    <p>Maaf, halaman yang Anda cari tidak ditemukan.</p>
+    <p><a href="/">Kembali ke Beranda</a></p>
+</body>
+</html>
+EOF
+            log_info "File 404.html berhasil dibuat"
+        fi
+
+        # Buat file 50x.html jika belum ada
+        if [ ! -f "${full_path}/50x.html" ]; then
+            cat > "${full_path}/50x.html" << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+    <title>500 - Kesalahan Server</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+        h1 { font-size: 36px; margin-bottom: 20px; }
+        p { font-size: 18px; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>500 - Kesalahan Server</h1>
+    <p>Maaf, terjadi kesalahan pada server.</p>
+    <p><a href="/">Kembali ke Beranda</a></p>
+</body>
+</html>
+EOF
+            log_info "File 50x.html berhasil dibuat"
+        fi
+    fi
 
     log_info "Membuat konfigurasi Nginx untuk ${domain_name}..."
 
@@ -818,7 +903,7 @@ EOF
     fi
 
     # Close server block
-    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+    cat >> "/etc/nginx/sites-available/${domain_name}" << EOF
 
     # Logging
     error_log /var/log/nginx/${domain_name}_error.log;
@@ -828,6 +913,7 @@ EOF
 
     # Replace placeholders
     sed -i "s/DOMAIN/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
+    sed -i "s/DOMAIN_NAME/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
     sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
 
     if [ "$stack_type" = "php" ]; then
@@ -842,8 +928,17 @@ EOF
         rm -f "/etc/nginx/sites-enabled/weding.domain.com"
     fi
 
-    # Create symlink and test config
-    ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+    # Tanya apakah ingin mengaktifkan konfigurasi
+    read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
+
+    if [ "$enable_config" = "y" ]; then
+        # Create symlink and test config
+        ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
+        log_info "Konfigurasi ${domain_name} diaktifkan"
+    else
+        log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di /etc/nginx/sites-available/${domain_name}"
+        log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/"
+    fi
 
     # Test and reload nginx
     if nginx -t; then
@@ -853,14 +948,19 @@ EOF
         log_info "Path aplikasi: ${app_path}"
 
         if [ "$stack_type" = "php" ]; then
-            log_info "Stack: PHP"
             if [ "$use_laravel" = "y" ]; then
-                log_info "Framework: Laravel"
+                log_info "Stack: Laravel"
+                log_info "Document root: ${app_path} (public folder)"
+            else
+                log_info "Stack: PHP Native"
+                log_info "Document root: ${app_path}"
             fi
         else
             log_info "Stack: JavaScript"
             if [ "$use_nodejs_service" = "y" ]; then
                 log_info "Node.js service pada port: ${nodejs_port}"
+            else
+                log_info "Static JavaScript (SPA)"
             fi
         fi
 
@@ -960,6 +1060,527 @@ EOL
 
 
 
+# Fungsi untuk optimasi server
+optimize_server() {
+    log_info "Memulai optimasi server..."
+
+    # Backup file konfigurasi sebelum modifikasi
+    log_info "Membuat backup file konfigurasi..."
+    cp /etc/sysctl.conf /etc/sysctl.conf.backup
+    cp /etc/security/limits.conf /etc/security/limits.conf.backup
+
+    # 1. Konfigurasi parameter kernel untuk performa optimal
+    log_info "Mengkonfigurasi parameter kernel..."
+    cat > /etc/sysctl.d/99-performance.conf << 'EOF'
+# Meningkatkan jumlah file yang dapat dibuka
+fs.file-max = 2097152
+
+# Meningkatkan batas ukuran mmap
+vm.max_map_count = 262144
+
+# Meningkatkan performa I/O
+vm.swappiness = 10
+vm.dirty_ratio = 60
+vm.dirty_background_ratio = 2
+
+# Optimasi TCP/IP stack
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
+net.ipv4.tcp_fin_timeout = 10
+net.ipv4.tcp_keepalive_time = 1200
+net.ipv4.tcp_keepalive_intvl = 15
+net.ipv4.tcp_keepalive_probes = 5
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.ip_local_port_range = 1024 65535
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.rmem_default = 262144
+net.core.wmem_default = 262144
+net.ipv4.tcp_congestion_control = cubic
+EOF
+
+    # Terapkan konfigurasi sysctl
+    sysctl -p /etc/sysctl.d/99-performance.conf > /dev/null 2>&1
+
+    # 2. Pengaturan system limits
+    log_info "Mengkonfigurasi system limits..."
+    cat >> /etc/security/limits.conf << 'EOF'
+
+# Konfigurasi limits untuk performa optimal
+* soft nofile 1048576
+* hard nofile 1048576
+root soft nofile 1048576
+root hard nofile 1048576
+* soft nproc 65535
+* hard nproc 65535
+root soft nproc 65535
+root hard nproc 65535
+EOF
+
+    # 3. Konfigurasi tambahan untuk performa
+    log_info "Mengkonfigurasi pengaturan tambahan..."
+
+    # Pastikan paket tuned terinstall
+    check_and_install_package tuned
+
+    # Konfigurasi tuned untuk performa
+    tuned-adm profile throughput-performance > /dev/null 2>&1
+
+    log_info "Optimasi server selesai!"
+    log_info "Backup file tersimpan di /etc/sysctl.conf.backup dan /etc/security/limits.conf.backup"
+}
+
+# Fungsi untuk instalasi dan konfigurasi sistem cache
+install_cache_system() {
+    log_info "Memulai instalasi sistem cache..."
+
+    echo "Pilih sistem cache yang akan diinstall:"
+    echo "1. Redis"
+    echo "2. Memcached"
+    echo "3. Keduanya (Redis dan Memcached)"
+    read -p "Pilihan [1-3]: " cache_choice
+
+    case $cache_choice in
+        1) install_redis ;;
+        2) install_memcached ;;
+        3) install_redis
+           install_memcached ;;
+        *) log_error "Pilihan tidak valid"; return 1 ;;
+    esac
+
+    # Deteksi PHP untuk integrasi
+    if command -v php > /dev/null; then
+        log_info "PHP terdeteksi, mengkonfigurasi integrasi dengan sistem cache..."
+
+        # Deteksi versi PHP
+        if [ -z "$selected_php_version" ]; then
+            for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+                if dpkg -l | grep -q "php$version"; then
+                    selected_php_version="$version"
+                    break
+                fi
+            done
+        fi
+
+        if [ -n "$selected_php_version" ]; then
+            log_info "Menggunakan PHP versi ${selected_php_version}"
+
+            # Instalasi ekstensi PHP untuk Redis jika Redis terinstall
+            if command -v redis-cli > /dev/null; then
+                check_and_install_package "php${selected_php_version}-redis"
+            fi
+
+            # Instalasi ekstensi PHP untuk Memcached jika Memcached terinstall
+            if command -v memcached > /dev/null; then
+                check_and_install_package "php${selected_php_version}-memcached"
+            fi
+
+            # Restart PHP-FPM
+            systemctl restart php${selected_php_version}-fpm
+        else
+            log_warning "Tidak dapat mendeteksi versi PHP yang terinstall"
+        fi
+    fi
+
+    log_info "Instalasi sistem cache selesai!"
+}
+
+# Fungsi untuk instalasi Redis
+install_redis() {
+    log_info "Menginstal Redis..."
+
+    # Instalasi Redis
+    check_and_install_package redis-server
+
+    # Backup konfigurasi asli
+    cp /etc/redis/redis.conf /etc/redis/redis.conf.backup
+
+    # Konfigurasi Redis untuk performa optimal
+    log_info "Mengkonfigurasi Redis..."
+    sed -i 's/^# maxmemory .*/maxmemory 256mb/' /etc/redis/redis.conf
+    sed -i 's/^# maxmemory-policy .*/maxmemory-policy allkeys-lru/' /etc/redis/redis.conf
+
+    # Aktifkan dan restart Redis
+    systemctl enable redis-server
+    systemctl restart redis-server
+
+    if systemctl is-active --quiet redis-server; then
+        log_info "Redis berhasil diinstal dan dikonfigurasi!"
+    else
+        log_error "Gagal mengaktifkan Redis"
+    fi
+}
+
+# Fungsi untuk instalasi Memcached
+install_memcached() {
+    log_info "Menginstal Memcached..."
+
+    # Instalasi Memcached
+    check_and_install_package memcached
+    check_and_install_package libmemcached-tools
+
+    # Backup konfigurasi asli
+    cp /etc/memcached.conf /etc/memcached.conf.backup
+
+    # Konfigurasi Memcached untuk performa optimal
+    log_info "Mengkonfigurasi Memcached..."
+    sed -i 's/^-m .*/\-m 128/' /etc/memcached.conf
+    sed -i 's/^-c .*/\-c 1024/' /etc/memcached.conf
+
+    # Aktifkan dan restart Memcached
+    systemctl enable memcached
+    systemctl restart memcached
+
+    if systemctl is-active --quiet memcached; then
+        log_info "Memcached berhasil diinstal dan dikonfigurasi!"
+    else
+        log_error "Gagal mengaktifkan Memcached"
+    fi
+}
+
+# Fungsi untuk security hardening
+security_hardening() {
+    log_info "Memulai security hardening..."
+
+    echo "Pilih opsi security hardening:"
+    echo "1. Implementasi fail2ban"
+    echo "2. Konfigurasi automatic updates"
+    echo "3. Pengamanan shared memory"
+    echo "4. Pembatasan akses sistem"
+    echo "5. Semua opsi di atas"
+    read -p "Pilihan [1-5]: " security_choice
+
+    case $security_choice in
+        1) install_fail2ban ;;
+        2) configure_auto_updates ;;
+        3) secure_shared_memory ;;
+        4) restrict_system_access ;;
+        5) install_fail2ban
+           configure_auto_updates
+           secure_shared_memory
+           restrict_system_access ;;
+        *) log_error "Pilihan tidak valid"; return 1 ;;
+    esac
+
+    log_info "Security hardening selesai!"
+}
+
+# Fungsi untuk instalasi fail2ban
+install_fail2ban() {
+    log_info "Menginstal fail2ban..."
+
+    # Instalasi fail2ban
+    check_and_install_package fail2ban
+
+    # Buat konfigurasi dasar
+    cat > /etc/fail2ban/jail.local << 'EOF'
+[DEFAULT]
+# Ban hosts for 1 hour
+bantime = 3600
+# Check for 10 minutes
+findtime = 600
+# Ban after 5 failures
+maxretry = 5
+
+# SSH protection
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+
+# Web server protection
+[nginx-http-auth]
+enabled = true
+filter = nginx-http-auth
+port = http,https
+logpath = /var/log/nginx/*error.log
+
+# PHP-FPM protection
+[php-url-fopen]
+enabled = true
+port = http,https
+filter = php-url-fopen
+logpath = /var/log/nginx/*access.log
+EOF
+
+    # Deteksi jika MySQL/MariaDB terinstall
+    if command -v mysql > /dev/null; then
+        cat >> /etc/fail2ban/jail.local << 'EOF'
+
+# MySQL protection
+[mysqld-auth]
+enabled = true
+filter = mysqld-auth
+port = 3306
+logpath = /var/log/mysql/error.log
+maxretry = 5
+EOF
+    fi
+
+    # Restart fail2ban
+    systemctl enable fail2ban
+    systemctl restart fail2ban
+
+    if systemctl is-active --quiet fail2ban; then
+        log_info "fail2ban berhasil diinstal dan dikonfigurasi!"
+        log_info "Konfigurasi: /etc/fail2ban/jail.local"
+    else
+        log_error "Gagal mengaktifkan fail2ban"
+    fi
+}
+
+# Fungsi untuk konfigurasi automatic updates
+configure_auto_updates() {
+    log_info "Mengkonfigurasi automatic updates..."
+
+    # Instalasi unattended-upgrades
+    check_and_install_package unattended-upgrades
+    check_and_install_package apt-listchanges
+
+    # Konfigurasi unattended-upgrades
+    cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Download-Upgradeable-Packages "1";
+APT::Periodic::AutocleanInterval "7";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+
+    # Konfigurasi detail unattended-upgrades
+    cat > /etc/apt/apt.conf.d/50unattended-upgrades << 'EOF'
+Unattended-Upgrade::Allowed-Origins {
+    "${distro_id}:${distro_codename}";
+    "${distro_id}:${distro_codename}-security";
+    "${distro_id}ESMApps:${distro_codename}-apps-security";
+    "${distro_id}ESM:${distro_codename}-infra-security";
+    "${distro_id}:${distro_codename}-updates";
+};
+
+Unattended-Upgrade::Package-Blacklist {
+};
+
+Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+Unattended-Upgrade::MinimalSteps "true";
+Unattended-Upgrade::InstallOnShutdown "false";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "false";
+EOF
+
+    # Aktifkan unattended-upgrades
+    systemctl enable unattended-upgrades
+    systemctl restart unattended-upgrades
+
+    if systemctl is-active --quiet unattended-upgrades; then
+        log_info "Automatic updates berhasil dikonfigurasi!"
+    else
+        log_error "Gagal mengaktifkan automatic updates"
+    fi
+}
+
+# Fungsi untuk pengamanan shared memory
+secure_shared_memory() {
+    log_info "Mengamankan shared memory..."
+
+    # Backup fstab
+    cp /etc/fstab /etc/fstab.backup
+
+    # Cek apakah konfigurasi sudah ada
+    if ! grep -q "tmpfs /dev/shm" /etc/fstab; then
+        # Tambahkan konfigurasi ke fstab
+        echo "tmpfs /dev/shm tmpfs defaults,noexec,nosuid,nodev 0 0" >> /etc/fstab
+
+        # Terapkan konfigurasi
+        mount -o remount /dev/shm
+
+        log_info "Shared memory berhasil diamankan!"
+    else
+        log_info "Shared memory sudah dikonfigurasi dengan aman"
+    fi
+}
+
+# Fungsi untuk pembatasan akses sistem
+restrict_system_access() {
+    log_info "Membatasi akses sistem..."
+
+    # Konfigurasi SSH yang lebih aman
+    log_info "Mengkonfigurasi SSH..."
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
+
+    # Konfigurasi SSH yang lebih aman
+    sed -i 's/^#PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config
+    sed -i 's/^#PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sed -i 's/^PasswordAuthentication .*/PasswordAuthentication no/' /etc/ssh/sshd_config
+    sed -i 's/^#MaxAuthTries .*/MaxAuthTries 3/' /etc/ssh/sshd_config
+
+    # Restart SSH
+    systemctl restart sshd
+
+    # Konfigurasi pembatasan akses sudo
+    log_info "Mengkonfigurasi sudo..."
+    cat > /etc/sudoers.d/secure << 'EOF'
+Defaults        use_pty
+Defaults        logfile="/var/log/sudo.log"
+Defaults        log_input, log_output
+EOF
+    chmod 440 /etc/sudoers.d/secure
+
+    log_info "Pembatasan akses sistem berhasil dikonfigurasi!"
+    log_warning "PENTING: Pastikan Anda memiliki akses SSH dengan key authentication sebelum logout!"
+}
+
+# Fungsi untuk sistem backup
+setup_backup_system() {
+    log_info "Menyiapkan sistem backup..."
+
+    # Instalasi paket yang diperlukan
+    check_and_install_package rsync
+
+    # Tanya lokasi backup
+    read -p "Masukkan direktori untuk menyimpan backup [/backup]: " backup_dir
+    backup_dir=${backup_dir:-/backup}
+
+    # Buat direktori backup
+    mkdir -p "${backup_dir}"
+    mkdir -p "${backup_dir}/mysql"
+    mkdir -p "${backup_dir}/websites"
+    mkdir -p "${backup_dir}/config"
+
+    # Buat script backup
+    cat > /usr/local/bin/run-backups.sh << EOF
+#!/bin/bash
+
+# Script backup otomatis
+# Dibuat oleh auto-vps8.2.sh
+
+# Direktori backup
+BACKUP_DIR="${backup_dir}"
+DATE=\$(date +%Y-%m-%d)
+MYSQL_BACKUP_DIR="\${BACKUP_DIR}/mysql"
+WEBSITES_BACKUP_DIR="\${BACKUP_DIR}/websites"
+CONFIG_BACKUP_DIR="\${BACKUP_DIR}/config"
+
+# Log file
+LOG_FILE="/var/log/backups.log"
+
+# Fungsi logging
+log_info() {
+    echo "\$(date +"%Y-%m-%d %H:%M:%S") [INFO] \$1" >> \$LOG_FILE
+    echo "\$(date +"%Y-%m-%d %H:%M:%S") [INFO] \$1"
+}
+
+log_error() {
+    echo "\$(date +"%Y-%m-%d %H:%M:%S") [ERROR] \$1" >> \$LOG_FILE
+    echo "\$(date +"%Y-%m-%d %H:%M:%S") [ERROR] \$1"
+}
+
+# Backup MySQL/MariaDB
+if command -v mysql > /dev/null; then
+    log_info "Memulai backup database MySQL/MariaDB..."
+
+    # Buat direktori untuk backup hari ini
+    mkdir -p "\${MYSQL_BACKUP_DIR}/\${DATE}"
+
+    # Dapatkan daftar database
+    databases=\$(mysql -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema|mysql|sys)")
+
+    # Backup setiap database
+    for db in \$databases; do
+        log_info "Backup database \$db"
+        mysqldump --single-transaction --quick --lock-tables=false "\$db" | gzip > "\${MYSQL_BACKUP_DIR}/\${DATE}/\${db}.sql.gz"
+
+        if [ \$? -eq 0 ]; then
+            log_info "Backup database \$db berhasil"
+        else
+            log_error "Backup database \$db gagal"
+        fi
+    done
+
+    log_info "Backup database selesai"
+fi
+
+# Backup website files
+log_info "Memulai backup file website..."
+
+# Buat direktori untuk backup hari ini
+mkdir -p "\${WEBSITES_BACKUP_DIR}/\${DATE}"
+
+# Backup direktori /var/www
+rsync -a --delete /var/www/ "\${WEBSITES_BACKUP_DIR}/\${DATE}/"
+
+if [ \$? -eq 0 ]; then
+    log_info "Backup file website berhasil"
+else
+    log_error "Backup file website gagal"
+fi
+
+# Backup konfigurasi Nginx
+if [ -d "/etc/nginx" ]; then
+    log_info "Memulai backup konfigurasi Nginx..."
+
+    # Buat direktori untuk backup hari ini
+    mkdir -p "\${CONFIG_BACKUP_DIR}/\${DATE}/nginx"
+
+    # Backup direktori konfigurasi Nginx
+    rsync -a --delete /etc/nginx/ "\${CONFIG_BACKUP_DIR}/\${DATE}/nginx/"
+
+    if [ \$? -eq 0 ]; then
+        log_info "Backup konfigurasi Nginx berhasil"
+    else
+        log_error "Backup konfigurasi Nginx gagal"
+    fi
+fi
+
+# Backup konfigurasi PHP
+if [ -d "/etc/php" ]; then
+    log_info "Memulai backup konfigurasi PHP..."
+
+    # Buat direktori untuk backup hari ini
+    mkdir -p "\${CONFIG_BACKUP_DIR}/\${DATE}/php"
+
+    # Backup direktori konfigurasi PHP
+    rsync -a --delete /etc/php/ "\${CONFIG_BACKUP_DIR}/\${DATE}/php/"
+
+    if [ \$? -eq 0 ]; then
+        log_info "Backup konfigurasi PHP berhasil"
+    else
+        log_error "Backup konfigurasi PHP gagal"
+    fi
+fi
+
+# Rotasi backup (hapus backup yang lebih dari 7 hari)
+log_info "Melakukan rotasi backup..."
+
+# Rotasi backup MySQL
+find "\${MYSQL_BACKUP_DIR}" -type d -name "20*" -mtime +7 -exec rm -rf {} \;
+
+# Rotasi backup website
+find "\${WEBSITES_BACKUP_DIR}" -type d -name "20*" -mtime +7 -exec rm -rf {} \;
+
+# Rotasi backup konfigurasi
+find "\${CONFIG_BACKUP_DIR}" -type d -name "20*" -mtime +7 -exec rm -rf {} \;
+
+log_info "Rotasi backup selesai"
+log_info "Proses backup selesai"
+EOF
+
+    # Buat executable
+    chmod +x /usr/local/bin/run-backups.sh
+
+    # Buat cron job untuk menjalankan backup setiap hari pada jam 2 pagi
+    echo "0 2 * * * root /usr/local/bin/run-backups.sh" > /etc/cron.d/daily-backups
+    chmod 644 /etc/cron.d/daily-backups
+
+    log_info "Sistem backup berhasil dikonfigurasi!"
+    log_info "Backup akan dijalankan setiap hari pada jam 2 pagi"
+    log_info "Lokasi backup: ${backup_dir}"
+    log_info "Log backup: /var/log/backups.log"
+    log_info "Untuk menjalankan backup manual: sudo /usr/local/bin/run-backups.sh"
+}
+
 # Fungsi untuk menampilkan sistem info
 show_system_info() {
     log_info "=== Informasi Sistem ==="
@@ -987,6 +1608,30 @@ show_system_info() {
         echo "Node.js Version: $(node -v)"
         echo "NPM Version: $(npm -v)"
     fi
+
+    # Tampilkan informasi tambahan
+    echo
+    echo "=== Layanan Aktif ==="
+    if systemctl is-active --quiet redis-server; then
+        echo "Redis: Aktif"
+    fi
+
+    if systemctl is-active --quiet memcached; then
+        echo "Memcached: Aktif"
+    fi
+
+    if systemctl is-active --quiet fail2ban; then
+        echo "Fail2ban: Aktif"
+    fi
+
+    if systemctl is-active --quiet unattended-upgrades; then
+        echo "Automatic Updates: Aktif"
+    fi
+
+    # Cek apakah backup sudah dikonfigurasi
+    if [ -f "/usr/local/bin/run-backups.sh" ]; then
+        echo "Sistem Backup: Terkonfigurasi"
+    fi
 }
 
 # Modifikasi menu utama dengan menambahkan opsi baru
@@ -995,6 +1640,7 @@ while true; do
     echo "=============================="
     echo "     Auto Setup VPS Menu     "
     echo "=============================="
+    echo "--- Instalasi Dasar ---"
     echo "1. Install PHP"
     echo "2. Install Nginx"
     echo "3. Install Database"
@@ -1003,11 +1649,19 @@ while true; do
     echo "6. Install FrankenPHP"
     echo "7. Konfigurasi Aplikasi Web"
     echo "8. Konfigurasi PHP"
-    echo "9. Tampilkan Informasi Sistem"
-    echo "10. Ganti User Root MySQL"
+    echo
+    echo "--- Optimasi & Keamanan ---"
+    echo "9. Optimasi Server"
+    echo "10. Instalasi Sistem Cache"
+    echo "11. Security Hardening"
+    echo "12. Sistem Backup"
+    echo
+    echo "--- Utilitas ---"
+    echo "13. Tampilkan Informasi Sistem"
+    echo "14. Ganti User Root MySQL"
     echo "0. Keluar"
     echo "=============================="
-    read -p "Pilihan [0-10]: " choice
+    read -p "Pilihan [0-14]: " choice
 
     case $choice in
         1) install_php ;;
@@ -1018,8 +1672,12 @@ while true; do
         6) install_frankenphp ;;
         7) configure_webapp ;;
         8) configure_php ;;
-        9) show_system_info ;;
-        10) mysql_change_root ;;
+        9) optimize_server ;;
+        10) install_cache_system ;;
+        11) security_hardening ;;
+        12) setup_backup_system ;;
+        13) show_system_info ;;
+        14) mysql_change_root ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;
