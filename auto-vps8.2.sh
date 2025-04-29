@@ -725,6 +725,7 @@ EOF
     location = /favicon.ico { access_log off; log_not_found off; }
     location = /robots.txt  { access_log off; log_not_found off; }
 
+    # Laravel specific error handling
     error_page 404 /index.php;
 
     location ~ \.php$ {
@@ -755,6 +756,10 @@ EOF
     location / {
         try_files $uri $uri/ =404;
     }
+
+    # Standard PHP error handling
+    error_page 404 /404.html;
+    error_page 500 502 503 504 /50x.html;
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
@@ -799,6 +804,9 @@ EOF
     location / {
         try_files $uri $uri/ /index.html;
     }
+
+    # SPA error handling
+    error_page 404 /index.html;
 
     # Cache static assets
     location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
