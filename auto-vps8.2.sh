@@ -732,6 +732,22 @@ configure_webapp() {
             read -p "Port aplikasi Node.js (default: 3000): " nodejs_port
             nodejs_port=${nodejs_port:-3000}
             log_info "Konfigurasi proxy untuk Node.js pada port ${nodejs_port}"
+        else
+            # Tanya apakah menggunakan Vite
+            read -p "Apakah aplikasi menggunakan Vite.js? (y/n): " use_vite
+
+            if [ "$use_vite" = "y" ]; then
+                log_info "Konfigurasi untuk aplikasi Vite.js akan dibuat"
+
+                # Tanya apakah perlu konfigurasi untuk development server
+                read -p "Apakah perlu konfigurasi untuk Vite development server? (y/n): " use_vite_dev
+
+                if [ "$use_vite_dev" = "y" ]; then
+                    read -p "Port Vite development server (default: 5173): " vite_port
+                    vite_port=${vite_port:-5173}
+                    log_info "Konfigurasi proxy untuk Vite development server pada port ${vite_port}"
+                fi
+            fi
         fi
     fi
 
@@ -918,8 +934,71 @@ EOF
     }
 EOF
         else
-            # Konfigurasi untuk static files (SPA)
-            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+            if [ "$use_vite" = "y" ]; then
+                if [ "$use_vite_dev" = "y" ]; then
+                    # Konfigurasi untuk Vite development server
+                    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+
+    root APPPATH;
+    index index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy untuk Vite dev server
+    location /@vite {
+        proxy_pass http://localhost:VITE_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # Proxy untuk HMR WebSocket
+    location /ws {
+        proxy_pass http://localhost:VITE_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+
+    # SPA error handling
+    error_page 404 /index.html;
+EOF
+                else
+                    # Konfigurasi untuk Vite production build
+                    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
+
+    root APPPATH;
+    index index.html index.htm;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Vite assets caching
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # SPA error handling
+    error_page 404 /index.html;
+
+    # Cache static assets
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
+        expires 30d;
+        add_header Cache-Control "public, no-transform";
+    }
+EOF
+                fi
+            else
+                # Konfigurasi untuk static files (SPA) standar
+                cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     root APPPATH;
     index index.html index.htm;
@@ -937,6 +1016,7 @@ EOF
         add_header Cache-Control "public, no-transform";
     }
 EOF
+            fi
         fi
     fi
 
@@ -958,6 +1038,8 @@ EOF
         sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
     elif [ "$use_nodejs_service" = "y" ]; then
         sed -i "s/NODEJS_PORT/${nodejs_port}/g" "/etc/nginx/sites-available/${domain_name}"
+    elif [ "$use_vite" = "y" ] && [ "$use_vite_dev" = "y" ]; then
+        sed -i "s/VITE_PORT/${vite_port}/g" "/etc/nginx/sites-available/${domain_name}"
     fi
 
     # Hapus referensi ke weding.domain.com jika ada
@@ -1030,6 +1112,15 @@ EOF
         log_info "Stack: JavaScript"
         if [ "$use_nodejs_service" = "y" ]; then
             log_info "Node.js service pada port: ${nodejs_port}"
+        elif [ "$use_vite" = "y" ]; then
+            if [ "$use_vite_dev" = "y" ]; then
+                log_info "Vite.js dengan development server pada port: ${vite_port}"
+                log_info "Proxy untuk Vite dev server: /@vite"
+                log_info "Proxy untuk HMR WebSocket: /ws"
+            else
+                log_info "Vite.js (production build)"
+                log_info "Optimized caching untuk folder /assets/"
+            fi
         else
             log_info "Static JavaScript (SPA)"
         fi
