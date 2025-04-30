@@ -725,6 +725,10 @@ configure_webapp() {
         # JavaScript stack
         full_path="$app_path"
 
+        # Default untuk JavaScript adalah menggunakan folder dist
+        js_public_path="${app_path}/dist"
+        log_info "JavaScript terdeteksi, root diatur ke: $js_public_path (folder dist)"
+
         # Tanya apakah menggunakan proxy untuk Node.js
         read -p "Apakah aplikasi berjalan sebagai service Node.js? (y/n): " use_nodejs_service
 
@@ -755,6 +759,13 @@ configure_webapp() {
 
     # Buat direktori jika belum ada
     mkdir -p "$full_path"
+
+    # Buat direktori dist untuk JavaScript jika diperlukan
+    if [ "$stack_type" = "js" ] && [ "$use_nodejs_service" != "y" ]; then
+        mkdir -p "$js_public_path"
+        log_info "Membuat direktori dist untuk aplikasi JavaScript: $js_public_path"
+    fi
+
     chown -R www-data:www-data "$full_path"
     chmod -R 755 "$full_path"
 
@@ -1032,14 +1043,25 @@ EOF
     # Replace placeholders
     sed -i "s/DOMAIN/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
     sed -i "s/DOMAIN_NAME/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
-    sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
 
+    # Set appropriate path based on stack type
     if [ "$stack_type" = "php" ]; then
+        sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
         sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
-    elif [ "$use_nodejs_service" = "y" ]; then
-        sed -i "s/NODEJS_PORT/${nodejs_port}/g" "/etc/nginx/sites-available/${domain_name}"
-    elif [ "$use_vite" = "y" ] && [ "$use_vite_dev" = "y" ]; then
-        sed -i "s/VITE_PORT/${vite_port}/g" "/etc/nginx/sites-available/${domain_name}"
+    else
+        # For JavaScript applications, use the dist folder path
+        if [ "$use_nodejs_service" = "y" ]; then
+            # For Node.js services, use the app_path as is
+            sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
+            sed -i "s/NODEJS_PORT/${nodejs_port}/g" "/etc/nginx/sites-available/${domain_name}"
+        else
+            # For static JS apps, use the dist folder
+            sed -i "s|APPPATH|${js_public_path}|g" "/etc/nginx/sites-available/${domain_name}"
+
+            if [ "$use_vite" = "y" ] && [ "$use_vite_dev" = "y" ]; then
+                sed -i "s/VITE_PORT/${vite_port}/g" "/etc/nginx/sites-available/${domain_name}"
+            fi
+        fi
     fi
 
     # Hapus referensi ke weding.domain.com jika ada
@@ -1112,17 +1134,21 @@ EOF
         log_info "Stack: JavaScript"
         if [ "$use_nodejs_service" = "y" ]; then
             log_info "Node.js service pada port: ${nodejs_port}"
+            log_info "Document root: ${app_path}"
         elif [ "$use_vite" = "y" ]; then
             if [ "$use_vite_dev" = "y" ]; then
                 log_info "Vite.js dengan development server pada port: ${vite_port}"
                 log_info "Proxy untuk Vite dev server: /@vite"
                 log_info "Proxy untuk HMR WebSocket: /ws"
+                log_info "Document root: ${js_public_path} (dist folder)"
             else
                 log_info "Vite.js (production build)"
                 log_info "Optimized caching untuk folder /assets/"
+                log_info "Document root: ${js_public_path} (dist folder)"
             fi
         else
             log_info "Static JavaScript (SPA)"
+            log_info "Document root: ${js_public_path} (dist folder)"
         fi
     fi
 
