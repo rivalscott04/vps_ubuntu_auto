@@ -1819,61 +1819,7 @@ show_system_info() {
     fi
 }
 
-# Modifikasi menu utama dengan menambahkan opsi baru
-while true; do
-    clear
-    echo "=============================="
-    echo "     Auto Setup VPS Menu     "
-    echo "=============================="
-    echo "--- Instalasi Dasar ---"
-    echo "1. Install PHP"
-    echo "2. Install Nginx"
-    echo "3. Install Database"
-    echo "4. Install phpMyAdmin"
-    echo "5. Install Node.js & npm"
-    echo "6. Install FrankenPHP"
-    echo "7. Konfigurasi Aplikasi Web"
-    echo "8. Konfigurasi PHP"
-    echo
-    echo "--- Optimasi & Keamanan ---"
-    echo "9. Optimasi Server"
-    echo "10. Instalasi Sistem Cache"
-    echo "11. Security Hardening"
-    echo "12. Sistem Backup"
-    echo
-    echo "--- Utilitas ---"
-    echo "13. Tampilkan Informasi Sistem"
-    echo "14. Ganti User Root MySQL"
-    echo "15. Install WordPress"
-    echo "0. Keluar"
-    echo "=============================="
-    read -p "Pilihan [0-15]: " choice
-
-    case $choice in
-        1) install_php ;;
-        2) install_webserver ;;
-        3) install_database ;;
-        4) install_phpmyadmin ;;
-        5) install_nodejs ;;
-        6) install_frankenphp ;;
-        7) configure_webapp ;;
-        8) configure_php ;;
-        9) optimize_server ;;
-        10) install_cache_system ;;
-        11) security_hardening ;;
-        12) setup_backup_system ;;
-        13) show_system_info ;;
-        14) mysql_change_root ;;
-        15) install_wordpress ;;
-        0) log_info "Terima kasih telah menggunakan script ini!"
-           exit 0 ;;
-        *) log_error "Pilihan tidak valid" ;;
-    esac
-
-    echo
-    read -p "Tekan Enter untuk melanjutkan..."
-done
-
+# Fungsi untuk instalasi WordPress
 install_wordpress() {
     log_info "Mempersiapkan instalasi WordPress..."
     check_and_install_package curl
