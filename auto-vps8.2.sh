@@ -1940,14 +1940,12 @@ server {
         try_files $uri $uri/ /index.php?$args;
     }
 
-    # Standard PHP error handling
     error_page 404 /404.html;
     error_page 500 502 503 504 /50x.html;
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        # Extended timeout
         fastcgi_read_timeout 300;
         fastcgi_send_timeout 300;
         fastcgi_connect_timeout 300;
