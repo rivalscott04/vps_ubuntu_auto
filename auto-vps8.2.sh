@@ -1844,9 +1844,10 @@ while true; do
     echo "--- Utilitas ---"
     echo "13. Tampilkan Informasi Sistem"
     echo "14. Ganti User Root MySQL"
+    echo "15. Install WordPress"
     echo "0. Keluar"
     echo "=============================="
-    read -p "Pilihan [0-14]: " choice
+    read -p "Pilihan [0-15]: " choice
 
     case $choice in
         1) install_php ;;
@@ -1863,6 +1864,7 @@ while true; do
         12) setup_backup_system ;;
         13) show_system_info ;;
         14) mysql_change_root ;;
+        15) install_wordpress ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;
@@ -1871,3 +1873,78 @@ while true; do
     echo
     read -p "Tekan Enter untuk melanjutkan..."
 done
+
+install_wordpress() {
+    log_info "Mempersiapkan instalasi WordPress..."
+    check_and_install_package curl
+    check_and_install_package unzip
+    check_and_install_package nginx
+
+    # Pastikan PHP dan ekstensi yang dibutuhkan terinstal
+    if [ -z "$selected_php_version" ]; then
+        for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+            if dpkg -l | grep -q "php$version"; then
+                selected_php_version="$version"
+                break
+            fi
+        done
+    fi
+    if [ -z "$selected_php_version" ]; then
+        log_error "PHP belum terinstal. Silakan install PHP terlebih dahulu."
+        return 1
+    fi
+    log_info "Menggunakan PHP versi ${selected_php_version}"
+    check_and_install_package "php${selected_php_version}-fpm"
+    check_and_install_package "php${selected_php_version}-mysql"
+    check_and_install_package "php${selected_php_version}-xml"
+    check_and_install_package "php${selected_php_version}-curl"
+    check_and_install_package "php${selected_php_version}-gd"
+    check_and_install_package "php${selected_php_version}-mbstring"
+    check_and_install_package "php${selected_php_version}-zip"
+
+    # Input domain dan path
+    read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+    read -p "Masukkan path instalasi (contoh: /var/www/html/domain.com): " wp_path
+    wp_path=${wp_path:-/var/www/html/${domain_name}}
+    mkdir -p "$wp_path"
+
+    # Download WordPress
+    log_info "Mengunduh WordPress..."
+    curl -L https://wordpress.org/latest.zip -o /tmp/wordpress.zip
+    unzip -oq /tmp/wordpress.zip -d /tmp/
+    rsync -a /tmp/wordpress/ "$wp_path/"
+
+    # Set permission
+    chown -R www-data:www-data "$wp_path"
+    find "$wp_path" -type d -exec chmod 755 {} \;
+    find "$wp_path" -type f -exec chmod 644 {} \;
+
+    # Konfigurasi database
+    read -p "Masukkan nama database WordPress: " db_name
+    read -p "Masukkan username database: " db_user
+    read -s -p "Masukkan password database: " db_pass; echo
+    read -p "Masukkan host database [localhost]: " db_host
+    db_host=${db_host:-localhost}
+
+    # Buat wp-config.php
+    cp "$wp_path/wp-config-sample.php" "$wp_path/wp-config.php"
+    sed -i "s/database_name_here/${db_name}/" "$wp_path/wp-config.php"
+    sed -i "s/username_here/${db_user}/" "$wp_path/wp-config.php"
+    sed -i "s/password_here/${db_pass}/" "$wp_path/wp-config.php"
+    sed -i "s/localhost/${db_host}/" "$wp_path/wp-config.php"
+
+    # Generate unique keys
+    keys=$(curl -s https://api.wordpress.org/secret-key/1.1/salt/)
+    if [ -n "$keys" ]; then
+        sed -i "/AUTH_KEY/d;/SECURE_AUTH_KEY/d;/LOGGED_IN_KEY/d;/NONCE_KEY/d;/AUTH_SALT/d;/SECURE_AUTH_SALT/d;/LOGGED_IN_SALT/d;/NONCE_SALT/d" "$wp_path/wp-config.php"
+        sed -i "/@since 2.6.0/a $keys" "$wp_path/wp-config.php"
+    fi
+
+    # Bersihkan file temporary
+    rm -rf /tmp/wordpress /tmp/wordpress.zip
+
+    log_info "WordPress berhasil diinstal di $wp_path"
+    log_info "Akses instalasi melalui: http://${domain_name}"
+    log_info "Pastikan domain sudah diarahkan ke server dan konfigurasi Nginx sudah sesuai."
+    log_info "Jika belum ada konfigurasi Nginx, gunakan menu 'Konfigurasi Aplikasi Web' untuk membuatnya."
+}
