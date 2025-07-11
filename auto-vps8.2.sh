@@ -1940,23 +1940,14 @@ server {
         try_files $uri $uri/ /index.php?$args;
     }
 
-    error_page 404 /404.html;
-    error_page 500 502 503 504 /50x.html;
-
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_read_timeout 300;
-        fastcgi_send_timeout 300;
-        fastcgi_connect_timeout 300;
     }
 
     location ~ /\.ht {
         deny all;
     }
-
-    error_log /var/log/nginx/${domain_name}_error.log;
-    access_log /var/log/nginx/${domain_name}_access.log combined;
 }
 EOF
 
