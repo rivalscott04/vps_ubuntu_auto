@@ -1848,10 +1848,22 @@ install_wordpress() {
     check_and_install_package "php${selected_php_version}-mbstring"
     check_and_install_package "php${selected_php_version}-zip"
 
-    # Input domain dan path
-    read -p "Masukkan domain utama (contoh: domain.com): " domain_name
-    read -p "Masukkan path instalasi (contoh: /var/www/html/domain.com): " wp_path
-    wp_path=${wp_path:-/var/www/html/${domain_name}}
+    # Tanya domain utama atau subdomain
+    echo "Pilih jenis domain untuk WordPress:"
+    echo "1. Domain utama (contoh: domain.com)"
+    echo "2. Subdomain (contoh: blog.domain.com)"
+    read -p "Pilihan [1-2]: " domain_type
+
+    if [ "$domain_type" = "1" ]; then
+        read -p "Masukkan domain utama (contoh: domain.com): " domain_name
+        wp_path="/var/www/html/${domain_name}"
+    else
+        read -p "Masukkan domain utama (contoh: domain.com): " main_domain
+        read -p "Masukkan subdomain (contoh: blog): " subdomain
+        subdomain=${subdomain:-blog}
+        domain_name="${subdomain}.${main_domain}"
+        wp_path="/var/www/html/${domain_name}"
+    fi
     mkdir -p "$wp_path"
 
     # Download WordPress
@@ -1889,10 +1901,87 @@ install_wordpress() {
     # Bersihkan file temporary
     rm -rf /tmp/wordpress /tmp/wordpress.zip
 
+    # Generate konfigurasi Nginx
+    nginx_conf="/etc/nginx/sites-available/${domain_name}"
+    log_info "Membuat konfigurasi Nginx untuk ${domain_name}..."
+    cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    root ${wp_path};
+    index index.php index.html index.htm;
+
+    # Cloudflare SSL configuration
+    set_real_ip_from 173.245.48.0/20;
+    set_real_ip_from 103.21.244.0/22;
+    set_real_ip_from 103.22.200.0/22;
+    set_real_ip_from 103.31.4.0/22;
+    set_real_ip_from 141.101.64.0/18;
+    set_real_ip_from 108.162.192.0/18;
+    set_real_ip_from 190.93.240.0/20;
+    set_real_ip_from 188.114.96.0/20;
+    set_real_ip_from 197.234.240.0/22;
+    set_real_ip_from 198.41.128.0/17;
+    set_real_ip_from 162.158.0.0/15;
+    set_real_ip_from 104.16.0.0/13;
+    set_real_ip_from 104.24.0.0/14;
+    set_real_ip_from 172.64.0.0/13;
+    set_real_ip_from 131.0.72.0/22;
+    set_real_ip_from 2400:cb00::/32;
+    set_real_ip_from 2606:4700::/32;
+    set_real_ip_from 2803:f800::/32;
+    set_real_ip_from 2405:b500::/32;
+    set_real_ip_from 2405:8100::/32;
+    set_real_ip_from 2a06:98c0::/29;
+    set_real_ip_from 2c0f:f248::/32;
+    real_ip_header CF-Connecting-IP;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    location ~* /(?:uploads|files)/.*\.php$ {
+        deny all;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+
+    error_log /var/log/nginx/${domain_name}_error.log;
+    access_log /var/log/nginx/${domain_name}_access.log combined;
+}
+EOF
+
+    log_info "Konfigurasi Nginx berhasil dibuat di $nginx_conf"
+
+    # Tawarkan aktivasi config dan restart Nginx
+    read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
+    if [ "$enable_config" = "y" ]; then
+        ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+        log_info "Konfigurasi ${domain_name} diaktifkan"
+        read -p "Restart service Nginx sekarang? (y/n): " restart_nginx
+        if [ "$restart_nginx" = "y" ]; then
+            systemctl restart nginx
+            log_info "Service Nginx berhasil di-restart"
+        else
+            log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
+            log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
+        fi
+    else
+        log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di $nginx_conf"
+        log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf $nginx_conf /etc/nginx/sites-enabled/"
+    fi
+
     log_info "WordPress berhasil diinstal di $wp_path"
     log_info "Akses instalasi melalui: http://${domain_name}"
-    log_info "Pastikan domain sudah diarahkan ke server dan konfigurasi Nginx sudah sesuai."
-    log_info "Jika belum ada konfigurasi Nginx, gunakan menu 'Konfigurasi Aplikasi Web' untuk membuatnya."
 }
 
 while true; do
