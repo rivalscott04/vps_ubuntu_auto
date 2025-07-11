@@ -826,7 +826,17 @@ EOF
     cat > "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 server {
     listen 80;
-    server_name DOMAIN;
+    listen 443 ssl http2;
+    server_name ${domain_name};
+    root ${wp_path};
+    index index.php index.html index.htm;
+
+    # SSL Configuration
+    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
 
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
@@ -851,310 +861,45 @@ server {
     set_real_ip_from 2405:8100::/32;
     set_real_ip_from 2a06:98c0::/29;
     set_real_ip_from 2c0f:f248::/32;
-
     real_ip_header CF-Connecting-IP;
-EOF
-
-    # Tambahkan konfigurasi berdasarkan stack
-    if [ "$stack_type" = "php" ]; then
-        # Tambahkan root path untuk PHP
-        cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
-
-    root APPPATH;
-    index index.php index.html index.htm;
-EOF
-
-        if [ "$use_laravel" = "y" ]; then
-            # Konfigurasi untuk Laravel
-            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
 
     location / {
-        try_files $uri $uri/ /index.php?$query_string;
+        try_files $uri $uri/ /index.php?$args;
     }
-
-    location = /favicon.ico { access_log off; log_not_found off; }
-    location = /robots.txt  { access_log off; log_not_found off; }
-
-    # Laravel specific error handling
-    error_page 404 /index.php;
-
-    location ~ \.php$ {
-        fastcgi_pass unix:/var/run/php/phpPHPVER-fpm.sock;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
-        include fastcgi_params;
-
-        # Extended timeout
-        fastcgi_read_timeout 300;
-        fastcgi_send_timeout 300;
-        fastcgi_connect_timeout 300;
-
-        # Buffer settings
-        fastcgi_buffer_size 128k;
-        fastcgi_buffers 4 256k;
-        fastcgi_busy_buffers_size 256k;
-    }
-
-    location ~ /\.(?!well-known).* {
-        deny all;
-    }
-EOF
-        else
-            # Konfigurasi untuk PHP Native
-            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
-
-    location / {
-        try_files $uri $uri/ =404;
-    }
-
-    # Standard PHP error handling
-    error_page 404 /404.html;
-    error_page 500 502 503 504 /50x.html;
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/var/run/php/phpPHPVER-fpm.sock;
-
-        # Extended timeout
-        fastcgi_read_timeout 300;
-        fastcgi_send_timeout 300;
-        fastcgi_connect_timeout 300;
+        fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
     }
 
     location ~ /\.ht {
         deny all;
     }
-EOF
-        fi
-    else
-        # Konfigurasi untuk JavaScript
-        if [ "$use_nodejs_service" = "y" ]; then
-            # Konfigurasi proxy untuk Node.js
-            cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
-
-    location / {
-        proxy_pass http://localhost:NODEJS_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-EOF
-        else
-            if [ "$use_vite" = "y" ]; then
-                if [ "$use_vite_dev" = "y" ]; then
-                    # Konfigurasi untuk Vite development server
-                    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
-
-    root APPPATH;
-    index index.html index.htm;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Proxy untuk Vite dev server
-    location /@vite {
-        proxy_pass http://localhost:VITE_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # Proxy untuk HMR WebSocket
-    location /ws {
-        proxy_pass http://localhost:VITE_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-
-    # SPA error handling
-    error_page 404 /index.html;
-EOF
-                else
-                    # Konfigurasi untuk Vite production build
-                    cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
-
-    root APPPATH;
-    index index.html index.htm;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Vite assets caching
-    location /assets/ {
-        expires 1y;
-        add_header Cache-Control "public, max-age=31536000, immutable";
-    }
-
-    # SPA error handling
-    error_page 404 /index.html;
-
-    # Cache static assets
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
-    }
-EOF
-                fi
-            else
-                # Konfigurasi untuk static files (SPA) standar
-                cat >> "/etc/nginx/sites-available/${domain_name}" << 'EOF'
-
-    root APPPATH;
-    index index.html index.htm;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # SPA error handling
-    error_page 404 /index.html;
-
-    # Cache static assets
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
-        expires 30d;
-        add_header Cache-Control "public, no-transform";
-    }
-EOF
-            fi
-        fi
-    fi
-
-    # Close server block
-    cat >> "/etc/nginx/sites-available/${domain_name}" << EOF
-
-    # Logging
-    error_log /var/log/nginx/${domain_name}_error.log;
-    access_log /var/log/nginx/${domain_name}_access.log combined;
 }
 EOF
 
-    # Replace placeholders
-    sed -i "s/DOMAIN/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
-    sed -i "s/DOMAIN_NAME/${domain_name}/g" "/etc/nginx/sites-available/${domain_name}"
+    log_info "Konfigurasi Nginx berhasil dibuat di $nginx_conf"
 
-    # Set appropriate path based on stack type
-    if [ "$stack_type" = "php" ]; then
-        sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
-        sed -i "s/PHPVER/${selected_php_version}/g" "/etc/nginx/sites-available/${domain_name}"
-    else
-        # For JavaScript applications, use the dist folder path
-        if [ "$use_nodejs_service" = "y" ]; then
-            # For Node.js services, use the app_path as is
-            sed -i "s|APPPATH|${app_path}|g" "/etc/nginx/sites-available/${domain_name}"
-            sed -i "s/NODEJS_PORT/${nodejs_port}/g" "/etc/nginx/sites-available/${domain_name}"
+    # Tawarkan aktivasi config dan restart Nginx
+    read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
+    if [ "$enable_config" = "y" ]; then
+        ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+        log_info "Konfigurasi ${domain_name} diaktifkan"
+        read -p "Restart service Nginx sekarang? (y/n): " restart_nginx
+        if [ "$restart_nginx" = "y" ]; then
+            systemctl restart nginx
+            log_info "Service Nginx berhasil di-restart"
         else
-            # For static JS apps, use the dist folder
-            sed -i "s|APPPATH|${js_public_path}|g" "/etc/nginx/sites-available/${domain_name}"
-
-            if [ "$use_vite" = "y" ] && [ "$use_vite_dev" = "y" ]; then
-                sed -i "s/VITE_PORT/${vite_port}/g" "/etc/nginx/sites-available/${domain_name}"
-            fi
-        fi
-    fi
-
-    # Hapus referensi ke weding.domain.com jika ada
-    if [ -f "/etc/nginx/sites-enabled/weding.domain.com" ]; then
-        log_warning "Menghapus referensi ke weding.domain.com..."
-        rm -f "/etc/nginx/sites-enabled/weding.domain.com"
-    fi
-
-    # Test konfigurasi Nginx
-    log_info "Menguji konfigurasi Nginx..."
-    if nginx -t; then
-        log_info "Konfigurasi Nginx valid!"
-
-        # Tanya apakah ingin mengaktifkan konfigurasi
-        read -p "Aktifkan konfigurasi Nginx untuk ${domain_name}? (y/n): " enable_config
-
-        if [ "$enable_config" = "y" ]; then
-            # Create symlink
-            ln -sf "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/"
-            log_info "Konfigurasi ${domain_name} diaktifkan"
-
-            # Tanya apakah ingin restart Nginx
-            read -p "Restart service Nginx sekarang? (y/n): " restart_nginx
-
-            if [ "$restart_nginx" = "y" ]; then
-                systemctl restart nginx
-                log_info "Service Nginx berhasil di-restart"
-            else
-                log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
-                log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
-            fi
-        else
-            log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di /etc/nginx/sites-available/${domain_name}"
-            log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf /etc/nginx/sites-available/${domain_name} /etc/nginx/sites-enabled/"
+            log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
+            log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
         fi
     else
-        log_error "Konfigurasi Nginx tidak valid!"
-        read -p "Hapus konfigurasi yang tidak valid? (y/n): " remove_config
-
-        if [ "$remove_config" = "y" ]; then
-            rm -f "/etc/nginx/sites-available/${domain_name}"
-            log_info "Konfigurasi yang tidak valid telah dihapus"
-        else
-            log_warning "Konfigurasi yang tidak valid tetap disimpan di /etc/nginx/sites-available/${domain_name}"
-            log_warning "Silakan perbaiki konfigurasi secara manual"
-        fi
-        return 1
+        log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di $nginx_conf"
+        log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf $nginx_conf /etc/nginx/sites-enabled/"
     fi
 
-    log_info "Konfigurasi aplikasi web selesai!"
-
-    # Tampilkan informasi domain
-    if [ "$domain_type" = "1" ]; then
-        log_info "Domain utama: ${domain_name}"
-    else
-        log_info "Subdomain: ${domain_name} (dari domain utama ${main_domain})"
-    fi
-
-    log_info "Path aplikasi: ${app_path}"
-
-    if [ "$stack_type" = "php" ]; then
-        if [ "$use_laravel" = "y" ]; then
-            log_info "Stack: Laravel"
-            log_info "Document root: ${app_path} (public folder)"
-        else
-            log_info "Stack: PHP Native"
-            log_info "Document root: ${app_path}"
-        fi
-    else
-        log_info "Stack: JavaScript"
-        if [ "$use_nodejs_service" = "y" ]; then
-            log_info "Node.js service pada port: ${nodejs_port}"
-            log_info "Document root: ${app_path}"
-        elif [ "$use_vite" = "y" ]; then
-            if [ "$use_vite_dev" = "y" ]; then
-                log_info "Vite.js dengan development server pada port: ${vite_port}"
-                log_info "Proxy untuk Vite dev server: /@vite"
-                log_info "Proxy untuk HMR WebSocket: /ws"
-                log_info "Document root: ${js_public_path} (dist folder)"
-            else
-                log_info "Vite.js (production build)"
-                log_info "Optimized caching untuk folder /assets/"
-                log_info "Document root: ${js_public_path} (dist folder)"
-            fi
-        else
-            log_info "Static JavaScript (SPA)"
-            log_info "Document root: ${js_public_path} (dist folder)"
-        fi
-    fi
-
-    if [ "$use_ssl" = "y" ]; then
-        log_info "SSL/HTTPS via Cloudflare telah dikonfigurasi"
-    fi
+    log_info "WordPress berhasil diinstal di $wp_path"
+    log_info "Akses instalasi melalui: http://${domain_name}"
 }
 
 # Fungsi 8: Konfigurasi PHP
@@ -1907,9 +1652,17 @@ install_wordpress() {
     cat > "$nginx_conf" <<EOF
 server {
     listen 80;
+    listen 443 ssl http2;
     server_name ${domain_name};
     root ${wp_path};
     index index.php index.html index.htm;
+
+    # SSL Configuration
+    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
+    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
 
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
