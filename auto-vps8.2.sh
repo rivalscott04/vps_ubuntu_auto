@@ -1652,17 +1652,9 @@ install_wordpress() {
     cat > "$nginx_conf" <<EOF
 server {
     listen 80;
-    listen 443 ssl http2;
     server_name ${domain_name};
     root ${wp_path};
     index index.php index.html index.htm;
-
-    # SSL Configuration
-    ssl_certificate /etc/ssl/certs/ssl-cert-snakeoil.pem;
-    ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
 
     # Cloudflare SSL configuration
     set_real_ip_from 173.245.48.0/20;
