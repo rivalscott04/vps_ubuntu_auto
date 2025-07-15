@@ -1,16 +1,44 @@
-# Auto VPS Ubuntu Setup
+# 🚀 Auto VPS Ubuntu Setup
 
-## Fitur Utama
-- **Menu interaktif 3 kolom** untuk instalasi dan konfigurasi server
-- **Menu WAJIB: Setup Dasar VPS** (update, upgrade, hostname, timezone, locale, firewall/UFW)
-- Instalasi PHP (dengan banyak ekstensi, siap Laravel, WordPress, phpMyAdmin, dsb)
-- Instalasi Nginx, Database (MySQL/MariaDB/PostgreSQL), Node.js, FrankenPHP, WordPress, phpMyAdmin
-- Konfigurasi aplikasi web, optimasi server, cache, security, backup
-- **Aktivasi SSL Let's Encrypt** (certbot) untuk banyak domain sekaligus, dengan deteksi otomatis
-- **Progress bar/spinner** pada proses instalasi
-- Struktur modular: fungsi dipisah di `utils.sh`, `installers.sh`, `configurators.sh`
+![Bash](https://img.shields.io/badge/Bash-Script-green?logo=gnubash)
 
-## Cara Pakai
+> **All-in-one VPS Provisioning & Web Hosting Toolkit**
+
+---
+
+## ✨ Fitur Unggulan
+
+- 🟢 **Menu Interaktif 3 Kolom** — Navigasi mudah, semua fitur dalam satu layar.
+- 🛡️ **Menu WAJIB: Setup Dasar VPS** — Update, upgrade, hostname, timezone, locale, firewall/UFW. **Jalankan ini pertama kali!**
+- 🐘 **Instalasi PHP** (banyak ekstensi, siap Laravel, WordPress, phpMyAdmin, dsb)
+- 🌐 **Nginx, Database, Node.js, FrankenPHP, WordPress, phpMyAdmin** — Semua siap satu klik.
+- 🔒 **SSL Let's Encrypt Otomatis** — Deteksi domain yang belum HTTPS, aktifkan sekaligus.
+- ⏳ **Progress Bar & Spinner** — Proses install lebih informatif.
+- 🧩 **Struktur Modular** — Mudah di-maintain: `utils.sh`, `installers.sh`, `configurators.sh`.
+
+---
+
+## 🖥️ Contoh Menu Utama
+
+```
+*** HARUS! Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall) ***
+================================================================================
+--- Instalasi Dasar ---           --- Optimasi & Keamanan ---   --- Utilitas ---
+1. Install PHP                    10. Optimasi Server           14. Info Sistem
+2. Install Nginx                  11. Sistem Cache              15. Ganti User MySQL
+3. Install Database               12. Security Hardening        16. Aktifkan SSL
+4. Install phpMyAdmin             13. Sistem Backup             0. Keluar
+5. Install Node.js & npm
+6. Install FrankenPHP
+7. Install WordPress
+8. Konfigurasi Aplikasi Web
+9. Konfigurasi PHP
+================================================================================
+```
+
+---
+
+## 🚦 Cara Pakai
 
 1. **Jadikan script executable:**
    ```bash
@@ -22,23 +50,56 @@
    ```
 3. **WAJIB! Jalankan menu paling atas:**
    > *** HARUS! Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall) ***
-   - Ini akan update sistem, set hostname, timezone, locale, dan aktifkan firewall.
-   - Sangat disarankan reboot setelah selesai.
+   - Update sistem, set hostname, timezone, locale, aktifkan firewall.
+   - **Tips:** Reboot server setelah selesai setup dasar.
 4. **Lanjutkan instalasi sesuai kebutuhan:**
-   - Pilih menu lain (PHP, Nginx, Database, dsb) sesuai kebutuhan project Anda.
+   - Pilih menu lain (PHP, Nginx, Database, dsb).
    - Untuk SSL, gunakan menu "Aktifkan SSL untuk Semua Domain" agar semua domain yang belum HTTPS bisa diaktifkan sekaligus.
-
-## Troubleshooting
-- Jika spinner/progress tidak muncul, pastikan terminal mendukung karakter khusus.
-- Jika certbot gagal, cek log certbot atau pastikan domain sudah mengarah ke IP VPS.
-- Untuk custom ekstensi PHP, edit bagian `installers.sh` pada fungsi install_php.
-
-## Struktur File
-- `auto-vps8.2.sh` (main menu & entry point)
-- `utils.sh` (fungsi logging & utilitas)
-- `installers.sh` (fungsi instalasi & SSL)
-- `configurators.sh` (fungsi konfigurasi, optimasi, backup, dsb)
 
 ---
 
-**Script ini cocok untuk provisioning VPS baru, siap pakai untuk web hosting modern!**
+## 💡 Tips & Best Practice
+
+- **Selalu jalankan menu setup dasar sebelum apapun!**
+- **Gunakan SSH key authentication** untuk keamanan ekstra.
+- **Cek log** jika ada error pada certbot/SSL.
+- **Backup konfigurasi** sebelum mengubah setting penting.
+- **Gunakan menu SSL** untuk mengamankan semua domain sekaligus.
+
+---
+
+## 🔥 FAQ
+
+**Q: Apakah script ini aman untuk VPS baru?**
+> Ya, script ini didesain untuk provisioning VPS dari awal, termasuk firewall dan update.
+
+**Q: Bisa untuk production?**
+> Sangat bisa, tinggal sesuaikan domain dan konfigurasi sesuai kebutuhan project.
+
+**Q: Bisa custom ekstensi PHP?**
+> Edit saja bagian `installers.sh` pada fungsi install_php.
+
+**Q: Bagaimana jika spinner/progress tidak muncul?**
+> Pastikan terminal mendukung karakter khusus (Cygwin, WSL, Ubuntu, dsb).
+
+---
+
+## 🗂️ Struktur File
+
+- `auto-vps8.2.sh` — Main menu & entry point
+- `utils.sh` — Logging & utilitas
+- `installers.sh` — Instalasi & SSL
+- `configurators.sh` — Konfigurasi, optimasi, backup, dsb
+
+---
+
+## 🏆 Siap Pakai untuk:
+- Web Hosting
+- WordPress, Laravel, PHP, Node.js, dsb
+- Project development & production
+
+---
+
+> **Script ini cocok untuk provisioning VPS baru, siap pakai untuk web hosting modern!**
+> 
+> _By: Rival & AI Assistant_
