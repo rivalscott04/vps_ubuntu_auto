@@ -609,26 +609,11 @@ server {
     root ${wp_path};
     index index.php index.html index.htm;
 
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header Referrer-Policy "no-referrer-when-downgrade" always;
-    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-
-    # Gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_proxied expired no-cache no-store private auth;
-    gzip_types application/atom+xml application/javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/svg+xml image/x-icon text/css text/plain text/x-component;
-
     # Block access to sensitive files
-    location ~* \.(htaccess|htpasswd|ini|log|sh|sql|conf)$ { deny all; }
-    location ~* wp-config\.php { deny all; }
-    location ~* ^.*(readme|license|changelog)\.(txt|md)$ { deny all; }
+    location ~* \\.(htaccess|htpasswd|ini|log|sh|sql|conf)$ { deny all; }
+    location ~* wp-config\\.php { deny all; }
     location = /xmlrpc.php { deny all; }
-    location ~* ^/wp-content/uploads/.*\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ { deny all; }
+    location ~* ^/wp-content/uploads/.*\\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ { deny all; }
 
     # WordPress permalinks
     location / {
@@ -636,26 +621,20 @@ server {
     }
 
     # Handle PHP files
-    location ~ \.php$ {
+    location ~ \\.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
-        fastcgi_hide_header X-Powered-By;
-        fastcgi_read_timeout 300;
-        fastcgi_buffer_size 128k;
-        fastcgi_buffers 4 256k;
-        fastcgi_busy_buffers_size 256k;
     }
 
     # Cache static files
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
         access_log off;
     }
 
-    # Error and access logs
     error_log /var/log/nginx/${domain_name}_error.log;
     access_log /var/log/nginx/${domain_name}_access.log;
 }
@@ -670,8 +649,12 @@ EOF
         log_info "Konfigurasi ${domain_name} diaktifkan"
         read -p "Restart service Nginx sekarang? (y/n): " restart_nginx
         if [ "$restart_nginx" = "y" ]; then
-            systemctl restart nginx
-            log_info "Service Nginx berhasil di-restart"
+            if nginx -t; then
+                systemctl restart nginx
+                log_info "Service Nginx berhasil di-restart"
+            else
+                log_error "Konfigurasi Nginx error! Periksa pesan di atas. Service tidak di-restart."
+            fi
         else
             log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
             log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
