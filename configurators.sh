@@ -35,9 +35,114 @@ configure_php() {
 
 # === Webapp Config ===
 configure_webapp() {
-    log_info "Mengkonfigurasi Web Application..."
-    # Placeholder for webapp configuration logic
-    log_info "Konfigurasi Web Application selesai!"
+    echo "=== Konfigurasi Web App (Nginx) ==="
+    echo "Pilih jenis aplikasi web yang ingin dikonfigurasi:"
+    echo "1. PHP Biasa"
+    echo "2. Laravel"
+    echo "3. Node.js/Express"
+    echo "4. React/Vite (static, folder dist)"
+    read -p "Pilihan [1-4]: " app_type
+    read -p "Masukkan domain/subdomain (misal: app.domain.com): " domain_name
+    read -p "Masukkan path root aplikasi (misal: /var/www/app): " app_path
+    case $app_type in
+        1)
+            # PHP Biasa
+            nginx_conf="/etc/nginx/sites-available/${domain_name}"
+            cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    root ${app_path};
+    index index.php index.html index.htm;
+
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+    location ~* \.ht { deny all; }
+}
+EOF
+            ;;
+        2)
+            # Laravel
+            nginx_conf="/etc/nginx/sites-available/${domain_name}"
+            cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    root ${app_path}/public;
+    index index.php index.html index.htm;
+
+    location / {
+        try_files \$uri \$uri/ /index.php?\$query_string;
+    }
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        include fastcgi_params;
+    }
+    location ~* \.ht { deny all; }
+}
+EOF
+            ;;
+        3)
+            # Node.js/Express (reverse proxy)
+            read -p "Masukkan port aplikasi Node.js (misal: 3000): " node_port
+            nginx_conf="/etc/nginx/sites-available/${domain_name}"
+            cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+
+    location / {
+        proxy_pass http://127.0.0.1:${node_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+    }
+}
+EOF
+            ;;
+        4)
+            # React/Vite (static, folder dist)
+            nginx_conf="/etc/nginx/sites-available/${domain_name}"
+            cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    root ${app_path}/dist;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+    location ~* \.(?:manifest|appcache|html?|xml|json)$ {
+        expires -1;
+    }
+    location ~* \.(?:css|js|woff2?|ttf|eot|ico|svg|jpg|jpeg|gif|png|webp)$ {
+        expires 1y;
+        access_log off;
+    }
+}
+EOF
+            ;;
+        *)
+            log_error "Pilihan tidak valid!"
+            return
+            ;;
+    esac
+    ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+    systemctl reload nginx
+    log_info "Konfigurasi Nginx untuk $domain_name berhasil dibuat di $nginx_conf dan diaktifkan!"
+    echo "Akses: http://$domain_name"
 }
 
 # === Optimasi Server ===
