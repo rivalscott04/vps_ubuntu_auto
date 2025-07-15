@@ -360,6 +360,7 @@ EOF
                 safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
                 log_info "Menjalankan certbot untuk domain ${domain_name}..."
                 certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
+                inject_nginx_ssl_block "${domain_name}" "$nginx_conf"
                 systemctl reload nginx
                 log_info "SSL Let's Encrypt telah diaktifkan untuk https://${domain_name}"
             fi
@@ -720,6 +721,7 @@ EOF
             safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
             log_info "Menjalankan certbot untuk domain ${domain_name}..."
             certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
+            inject_nginx_ssl_block "${domain_name}" "$nginx_conf"
             systemctl reload nginx
             log_info "SSL Let's Encrypt telah diaktifkan untuk https://${domain_name}"
         fi
@@ -829,6 +831,9 @@ offer_ssl_for_all_domains() {
         certbot_out=$(certbot --nginx -d $domain --non-interactive --agree-tos -m "$certbot_email" 2>&1)
         if [ $? -eq 0 ]; then
             log_info "\e[1;32m[SUKSES]\e[0m SSL aktif untuk https://$domain (email: $certbot_email)"
+            conf_path="/etc/nginx/sites-available/$domain"
+            [ -f "$conf_path" ] || conf_path="/etc/nginx/sites-enabled/$domain"
+            inject_nginx_ssl_block "$domain" "$conf_path"
         else
             log_error "Certbot gagal untuk $domain:"
             echo "$certbot_out" | tail -n 10
@@ -837,6 +842,45 @@ offer_ssl_for_all_domains() {
     systemctl reload nginx
     log_info "Proses SSL selesai untuk domain terpilih."
 } 
+
+# Helper: Inject SSL block ke Nginx config jika belum ada
+inject_nginx_ssl_block() {
+    local domain="$1"
+    local conf_path="$2"
+    local le_path="/etc/letsencrypt/live/$domain"
+    if grep -q 'listen 443' "$conf_path" && grep -q 'ssl_certificate' "$conf_path"; then
+        log_info "Config $conf_path sudah punya blok SSL. Skip inject."
+        return
+    fi
+    log_info "Menambahkan blok SSL ke $conf_path ..."
+    # Tambahkan blok server listen 443 ssl
+    cat <<EOF >> "$conf_path"
+
+server {
+    listen 443 ssl;
+    server_name $domain;
+    root /var/www/$domain;
+
+    ssl_certificate     $le_path/fullchain.pem;
+    ssl_certificate_key $le_path/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    # ... (tambahkan location, proxy, dsb sesuai kebutuhan, atau biarkan user edit manual)
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+
+# Redirect HTTP ke HTTPS
+server {
+    listen 80;
+    server_name $domain;
+    return 301 https://$host$request_uri;
+}
+EOF
+    log_info "Blok SSL berhasil ditambahkan ke $conf_path."
+}
 
 setup_basic_vps() {
     echo
