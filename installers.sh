@@ -401,6 +401,17 @@ EOF
                 log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
                 log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
             fi
+
+            # Tambahkan: Tawarkan instalasi SSL Certbot
+            read -p "Ingin mengaktifkan SSL gratis (Let's Encrypt) untuk domain ${domain_name}? (y/n): " enable_ssl
+            if [ "$enable_ssl" = "y" ]; then
+                log_info "Menginstal certbot dan plugin nginx..."
+                apt update && apt install -y certbot python3-certbot-nginx
+                log_info "Menjalankan certbot untuk domain ${domain_name}..."
+                certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
+                systemctl reload nginx
+                log_info "SSL Let's Encrypt telah diaktifkan untuk https://${domain_name}"
+            fi
         else
             # Remove symlink if exists
             if [ -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
@@ -741,6 +752,17 @@ EOF
             log_info "Service Nginx tidak di-restart. Perubahan akan berlaku setelah Nginx di-restart."
             log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
         fi
+
+        # Tambahkan: Tawarkan instalasi SSL Certbot
+        read -p "Ingin mengaktifkan SSL gratis (Let's Encrypt) untuk domain ${domain_name}? (y/n): " enable_ssl
+        if [ "$enable_ssl" = "y" ]; then
+            log_info "Menginstal certbot dan plugin nginx..."
+            apt update && apt install -y certbot python3-certbot-nginx
+            log_info "Menjalankan certbot untuk domain ${domain_name}..."
+            certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
+            systemctl reload nginx
+            log_info "SSL Let's Encrypt telah diaktifkan untuk https://${domain_name}"
+        fi
     else
         log_info "Konfigurasi ${domain_name} tidak diaktifkan, tersimpan di $nginx_conf"
         log_info "Untuk mengaktifkan nanti, jalankan: sudo ln -sf $nginx_conf /etc/nginx/sites-enabled/"
@@ -748,4 +770,29 @@ EOF
 
     log_info "WordPress berhasil diinstal di $wp_path"
     log_info "Akses instalasi melalui: http://${domain_name}"
+} 
+
+offer_ssl_for_all_domains() {
+    log_info "Mendeteksi domain yang belum memiliki SSL..."
+    for conf in /etc/nginx/sites-enabled/*; do
+        [ -e "$conf" ] || continue
+        domain=$(basename "$conf")
+        # Cek apakah sudah ada listen 443 atau ssl_certificate
+        if grep -q 'listen 443' "$conf" || grep -q 'ssl_certificate' "$conf"; then
+            log_info "Domain $domain sudah memiliki SSL."
+        else
+            echo
+            log_warning "Domain $domain belum memiliki SSL."
+            read -p "Aktifkan SSL gratis (Let's Encrypt) untuk $domain? (y/n): " enable_ssl
+            if [ "$enable_ssl" = "y" ]; then
+                log_info "Menginstal certbot dan plugin nginx..."
+                apt update && apt install -y certbot python3-certbot-nginx
+                log_info "Menjalankan certbot untuk domain $domain..."
+                certbot --nginx -d $domain --non-interactive --agree-tos -m admin@$domain || log_warning "Certbot gagal, cek log untuk detail."
+                systemctl reload nginx
+                log_info "SSL Let's Encrypt telah diaktifkan untuk https://$domain"
+            fi
+        fi
+    done
+    log_info "Pengecekan SSL selesai."
 } 

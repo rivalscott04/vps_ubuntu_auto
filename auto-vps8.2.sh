@@ -36,6 +36,7 @@ while true; do
     echo "--- Utilitas ---"
     echo "14. Tampilkan Informasi Sistem"
     echo "15. Ganti User Root MySQL"
+    echo "16. Aktifkan SSL untuk Semua Domain"
     echo "0. Keluar"
     echo "=============================="
     read -p "Pilihan [0-15]: " choice
@@ -56,6 +57,7 @@ while true; do
         13) setup_backup_system ;;
         14) show_system_info ;;
         15) mysql_change_root ;;
+        16) offer_ssl_for_all_domains ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;
