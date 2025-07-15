@@ -43,12 +43,12 @@ while true; do
     fi
     # Jika setup dasar sudah selesai, tampilkan menu lengkap
     printf "%-35s %-35s %-35s\n" "--- Instalasi Dasar ---" "--- Optimasi & Keamanan ---" "--- Utilitas ---"
-    printf "%-35s %-35s %-35s\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Informasi Sistem"
+    printf "%-35s %-35s %-35s\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Informasi Sistem (modern)"
     printf "%-35s %-35s %-35s\n" "2. Install Nginx" "11. Instalasi Sistem Cache" "15. Ganti User Root MySQL"
     printf "%-35s %-35s %-35s\n" "3. Install Database" "12. Security Hardening" "16. Aktifkan SSL untuk Semua Domain"
-    printf "%-35s %-35s %-35s\n" "4. Install phpMyAdmin" "13. Sistem Backup" ""
+    printf "%-35s %-35s %-35s\n" "4. Install phpMyAdmin" "13. Sistem Backup" "17. Cek Ekstensi PHP Terinstall"
     printf "%-35s %-35s %-35s\n" "5. Install Node.js & npm" "" ""
-    printf "%-35s %-35s %-35s\n" "6. Install FrankenPHP" "" "18. Cek Ekstensi PHP Terinstall"
+    printf "%-35s %-35s %-35s\n" "6. Install FrankenPHP" "" ""
     printf "%-35s %-35s %-35s\n" "7. Install WordPress" "" ""
     printf "%-35s %-35s %-35s\n" "8. Konfigurasi Aplikasi Web" "" ""
     printf "%-35s %-35s %-35s\n" "9. Konfigurasi PHP" "" ""
@@ -73,7 +73,7 @@ while true; do
         14) bash ./systeminfo.sh ;;
         15) mysql_change_root ;;
         16) offer_ssl_for_all_domains ;;
-        18) check_installed_php_extensions ;;
+        17) check_installed_php_extensions ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;
