@@ -824,45 +824,70 @@ offer_ssl_for_all_domains() {
 
 setup_basic_vps() {
     echo
-    log_info "[1/4] Update & Upgrade Sistem..."
-    apt update > /dev/null 2>&1 & show_progress
-    apt upgrade -y > /dev/null 2>&1 & show_progress
-    log_info "Update & upgrade selesai."
-    touch /etc/vps_setup_done_update
-    echo
-    read -p "Masukkan hostname baru untuk VPS: " new_hostname
-    if [ -n "$new_hostname" ]; then
-        hostnamectl set-hostname "$new_hostname"
-        log_info "Hostname diubah menjadi $new_hostname"
-        echo "$new_hostname" > /etc/vps_setup_done_hostname
+    # Update & Upgrade
+    if [ -f /etc/vps_setup_done_update ]; then
+        log_info "Update & upgrade sudah dilakukan, skip."
     else
-        log_warning "Hostname tidak diubah."
+        log_info "[1/4] Update & Upgrade Sistem..."
+        apt update > /dev/null 2>&1 & show_progress
+        apt upgrade -y > /dev/null 2>&1 & show_progress
+        log_info "Update & upgrade selesai."
+        touch /etc/vps_setup_done_update
     fi
     echo
-    read -p "Masukkan timezone (misal: Asia/Jakarta): " timezone
-    if [ -n "$timezone" ]; then
-        timedatectl set-timezone "$timezone"
-        log_info "Timezone diubah menjadi $timezone"
-        echo "$timezone" > /etc/vps_setup_done_timezone
+    # Hostname
+    if [ -f /etc/vps_setup_done_hostname ]; then
+        log_info "Hostname sudah diubah, skip."
     else
-        log_warning "Timezone tidak diubah."
+        read -p "Masukkan hostname baru untuk VPS: " new_hostname
+        if [ -n "$new_hostname" ]; then
+            hostnamectl set-hostname "$new_hostname"
+            log_info "Hostname diubah menjadi $new_hostname"
+            echo "$new_hostname" > /etc/vps_setup_done_hostname
+        else
+            log_warning "Hostname tidak diubah."
+        fi
     fi
     echo
-    read -p "Masukkan locale (misal: en_US.UTF-8): " locale
-    if [ -n "$locale" ]; then
-        update-locale LANG=$locale
-        log_info "Locale diubah menjadi $locale"
-        echo "$locale" > /etc/vps_setup_done_locale
+    # Timezone
+    if [ -f /etc/vps_setup_done_timezone ]; then
+        log_info "Timezone sudah diubah, skip."
     else
-        log_warning "Locale tidak diubah."
+        read -p "Masukkan timezone (misal: Asia/Jakarta): " timezone
+        if [ -n "$timezone" ]; then
+            timedatectl set-timezone "$timezone"
+            log_info "Timezone diubah menjadi $timezone"
+            echo "$timezone" > /etc/vps_setup_done_timezone
+        else
+            log_warning "Timezone tidak diubah."
+        fi
     fi
     echo
-    log_info "[4/4] Install & Enable UFW (Firewall)..."
-    apt install -y ufw > /dev/null 2>&1 & show_progress
-    ufw allow OpenSSH
-    ufw --force enable
-    log_info "UFW aktif. Port SSH diizinkan."
-    touch /etc/vps_setup_done_ufw
+    # Locale
+    if [ -f /etc/vps_setup_done_locale ]; then
+        log_info "Locale sudah diubah, skip."
+    else
+        read -p "Masukkan locale (misal: en_US.UTF-8): " locale
+        if [ -n "$locale" ]; then
+            update-locale LANG=$locale
+            log_info "Locale diubah menjadi $locale"
+            echo "$locale" > /etc/vps_setup_done_locale
+        else
+            log_warning "Locale tidak diubah."
+        fi
+    fi
+    echo
+    # UFW
+    if [ -f /etc/vps_setup_done_ufw ]; then
+        log_info "UFW (Firewall) sudah aktif, skip."
+    else
+        log_info "[4/4] Install & Enable UFW (Firewall)..."
+        apt install -y ufw > /dev/null 2>&1 & show_progress
+        ufw allow OpenSSH
+        ufw --force enable
+        log_info "UFW aktif. Port SSH diizinkan."
+        touch /etc/vps_setup_done_ufw
+    fi
     echo
     log_info "Setup dasar VPS selesai! Sangat disarankan reboot setelah ini."
 } 
