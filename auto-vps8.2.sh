@@ -48,7 +48,7 @@ while true; do
     printf "│ %-37s │ %-37s │ %-37s │\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Info Sistem"
     printf "│ %-37s │ %-37s │ %-37s │\n" "2. Install Nginx" "11. Instalasi Sistem Cache" "15. Aktifkan SSL Semua Domain"
     printf "│ %-37s │ %-37s │ %-37s │\n" "3. Install Database" "12. Security Hardening" "16. Konfigurasi systemd Node.js"
-    printf "│ %-37s │ %-37s │ %-37s │\n" "4. Install phpMyAdmin" "13. Sistem Backup" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "4. Install phpMyAdmin" "13. Sistem Backup" "17. Hapus SSL Domain"
     printf "│ %-37s │ %-37s │ %-37s │\n" "5. Install Node.js & npm" "" ""
     printf "│ %-37s │ %-37s │ %-37s │\n" "6. Install FrankenPHP" "" ""
     printf "│ %-37s │ %-37s │ %-37s │\n" "7. Install WordPress" "" ""
@@ -76,6 +76,7 @@ while true; do
         14) bash ./systeminfo.sh ;;
         15) offer_ssl_for_all_domains ;;
         16) configure_nodejs_systemd ;;
+        17) hapus_ssl_for_domains ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;

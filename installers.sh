@@ -843,6 +843,70 @@ offer_ssl_for_all_domains() {
     log_info "Proses SSL selesai untuk domain terpilih."
 } 
 
+hapus_ssl_for_domains() {
+    log_info "Mendeteksi domain yang sudah memiliki SSL..."
+    local domains=()
+    local confs=()
+    local i=1
+    for conf in /etc/nginx/sites-enabled/*; do
+        [ -e "$conf" ] || continue
+        domain=$(basename "$conf")
+        # Kecualikan localhost dan 127.0.0.1
+        if [[ "$domain" =~ localhost|127.0.0.1 ]]; then
+            continue
+        fi
+        if grep -q 'listen 443' "$conf" && grep -q 'ssl_certificate' "$conf"; then
+            domains+=("$domain")
+            confs+=("$conf")
+        fi
+    done
+    if [ ${#domains[@]} -eq 0 ]; then
+        log_info "Tidak ada domain yang terdeteksi sudah memiliki SSL."
+        return
+    fi
+    echo "Domain yang sudah terinstall SSL:"
+    echo "----------------------------------------"
+    echo " No  | Domain"
+    echo "-----+-------------------------------"
+    for idx in "${!domains[@]}"; do
+        printf " %2d  | %s\n" $((idx+1)) "${domains[$idx]}"
+    done
+    echo "----------------------------------------"
+    echo
+    read -p "Masukkan nomor domain yang ingin DIHAPUS SSL-nya (pisahkan spasi/koma, atau 'all' untuk semua): " input
+    if [[ "$input" == "all" ]]; then
+        selected=("${domains[@]}")
+    else
+        IFS=', ' read -ra nums <<< "$input"
+        selected=()
+        for n in "${nums[@]}"; do
+            n=$(echo $n | tr -d ' ')
+            if [[ $n =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#domains[@]} )); then
+                selected+=("${domains[$((n-1))]}")
+            fi
+        done
+    fi
+    if [ ${#selected[@]} -eq 0 ]; then
+        log_warning "Tidak ada domain yang dipilih."
+        return
+    fi
+    echo "Akan menghapus SSL dan konfigurasi Nginx untuk: ${selected[*]}"
+    for domain in "${selected[@]}"; do
+        log_info "Menghapus SSL dan konfigurasi Nginx untuk $domain ..."
+        # Hapus config Nginx
+        rm -f "/etc/nginx/sites-enabled/$domain" "/etc/nginx/sites-available/$domain"
+        # Hapus sertifikat Let's Encrypt
+        if command -v certbot >/dev/null 2>&1; then
+            certbot delete --cert-name "$domain" --non-interactive || log_warning "Gagal hapus sertifikat Let's Encrypt untuk $domain."
+        fi
+        # Hapus folder web root jika ingin (opsional, di-comment)
+        # rm -rf "/var/www/$domain"
+        log_info "Selesai hapus SSL & config untuk $domain."
+    done
+    systemctl reload nginx
+    log_info "Proses hapus SSL selesai."
+}
+
 # Helper: Inject SSL block ke Nginx config jika belum ada
 inject_nginx_ssl_block() {
     local domain="$1"
