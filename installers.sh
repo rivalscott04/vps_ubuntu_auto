@@ -809,7 +809,7 @@ offer_ssl_for_all_domains() {
         log_info "Semua domain sudah memiliki SSL atau tidak ada domain yang terdeteksi."
         return
     fi
-    echo "\nDomain yang belum memiliki SSL:"
+    echo "Domain yang belum memiliki SSL:"
     echo "----------------------------------------"
     echo " No  | Domain"
     echo "-----+-------------------------------"
@@ -836,13 +836,33 @@ offer_ssl_for_all_domains() {
         return
     fi
     log_info "Akan mengaktifkan SSL untuk: ${selected[*]}"
-    safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
+    # Install certbot & plugin hanya jika belum ada
+    if ! command -v certbot >/dev/null 2>&1 || ! dpkg -l | grep -q python3-certbot-nginx; then
+        safe_apt_update
+        safe_apt_install -y certbot python3-certbot-nginx
+    fi
+    echo
+    read -p "Apakah Anda sudah punya akun Let's Encrypt? (y/n): " has_account
+    if [[ "$has_account" =~ ^[Yy]$ ]]; then
+        read -p "Masukkan email akun Let's Encrypt Anda: " certbot_email
+    else
+        certbot_email=""
+    fi
     for domain in "${selected[@]}"; do
-        log_info "Menjalankan certbot untuk domain $domain..."
-        certbot --nginx -d $domain --non-interactive --agree-tos -m admin@$domain || log_warning "Certbot gagal untuk $domain, cek log untuk detail."
+        if [ -z "$certbot_email" ]; then
+            certbot_email="admin@$domain"
+        fi
+        log_info "Menjalankan certbot untuk domain $domain (email: $certbot_email)..."
+        certbot_out=$(certbot --nginx -d $domain --non-interactive --agree-tos -m "$certbot_email" 2>&1)
+        if [ $? -eq 0 ]; then
+            log_info "\e[1;32m[SUKSES]\e[0m SSL aktif untuk https://$domain (email: $certbot_email)"
+        else
+            log_error "Certbot gagal untuk $domain:"
+            echo "$certbot_out" | tail -n 10
+        fi
     done
     systemctl reload nginx
-    log_info "SSL Let's Encrypt telah diaktifkan untuk domain terpilih."
+    log_info "Proses SSL selesai untuk domain terpilih."
 } 
 
 setup_basic_vps() {

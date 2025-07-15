@@ -58,9 +58,9 @@ show_progress() {
 
 # Helper untuk handle APT lock
 safe_apt_update() {
-    echo -e "\e[1;36m[INFO]\e[0m Akan menjalankan: apt update"
+    echo -e "\e[1;36m[INFO]\e[0m Akan menjalankan: apt-get update"
     while true; do
-        apt update 2>&1 | tee /tmp/aptlog
+        apt-get update 2>&1 | tee /tmp/aptlog
         if grep -q "Could not get lock" /tmp/aptlog; then
             pid=$(grep -oP 'held by process \\K[0-9]+' /tmp/aptlog | head -n1)
             pname=$(ps -p $pid -o comm=)
@@ -76,20 +76,20 @@ safe_apt_update() {
                 *) echo "Pilihan tidak valid, ulangi.";;
             esac
         elif grep -q "E: "; then
-            echo -e "\e[1;31m[ERROR]\e[0m apt update gagal:"
+            echo -e "\e[1;31m[ERROR]\e[0m apt-get update gagal:"
             grep "E: " /tmp/aptlog
             return 1
         else
-            echo -e "\e[1;32m[SUKSES]\e[0m apt update selesai."
+            echo -e "\e[1;32m[SUKSES]\e[0m apt-get update selesai."
             break
         fi
     done
 }
 
 safe_apt_upgrade() {
-    echo -e "\e[1;36m[INFO]\e[0m Akan menjalankan: apt upgrade -y"
+    echo -e "\e[1;36m[INFO]\e[0m Akan menjalankan: apt-get upgrade -y"
     while true; do
-        apt upgrade -y 2>&1 | tee /tmp/aptlog
+        apt-get upgrade -y 2>&1 | tee /tmp/aptlog
         if grep -q "Could not get lock" /tmp/aptlog; then
             pid=$(grep -oP 'held by process \\K[0-9]+' /tmp/aptlog | head -n1)
             pname=$(ps -p $pid -o comm=)
@@ -105,11 +105,11 @@ safe_apt_upgrade() {
                 *) echo "Pilihan tidak valid, ulangi.";;
             esac
         elif grep -q "E: " /tmp/aptlog; then
-            echo -e "\e[1;31m[ERROR]\e[0m apt upgrade gagal:"
+            echo -e "\e[1;31m[ERROR]\e[0m apt-get upgrade gagal:"
             grep "E: " /tmp/aptlog
             return 1
         else
-            echo -e "\e[1;32m[SUKSES]\e[0m apt upgrade selesai."
+            echo -e "\e[1;32m[SUKSES]\e[0m apt-get upgrade selesai."
             break
         fi
     done
@@ -119,7 +119,7 @@ safe_apt_install() {
     # $@ = paket yang ingin diinstall
     echo -e "\e[1;36m[INFO]\e[0m Akan menginstall: $*"
     while true; do
-        apt install -y "$@" 2>&1 | tee /tmp/aptlog
+        apt-get install -y "$@" 2>&1 | tee /tmp/aptlog
         if grep -q "Could not get lock" /tmp/aptlog; then
             pid=$(grep -oP 'held by process \\K[0-9]+' /tmp/aptlog | head -n1)
             pname=$(ps -p $pid -o comm=)
@@ -135,7 +135,7 @@ safe_apt_install() {
                 *) echo "Pilihan tidak valid, ulangi.";;
             esac
         elif grep -q "E: " /tmp/aptlog; then
-            echo -e "\e[1;31m[ERROR]\e[0m apt install gagal:"
+            echo -e "\e[1;31m[ERROR]\e[0m apt-get install gagal:"
             grep "E: " /tmp/aptlog
             return 1
         else
