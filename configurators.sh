@@ -191,4 +191,44 @@ check_installed_php_extensions() {
         fi
     done
     echo -e "$output"
+}
+
+# === Konfigurasi systemd untuk Node.js ===
+configure_nodejs_systemd() {
+    echo "=== Konfigurasi systemd untuk Node.js ==="
+    read -p "Masukkan path aplikasi Node.js (misal: /var/www/api_pegawai): " app_path
+    if [ ! -d "$app_path" ]; then
+        log_error "Path $app_path tidak ditemukan!"
+        return
+    fi
+    read -p "Masukkan nama service systemd (misal: api-pegawai): " service_name
+    read -p "Masukkan nama file entry point (default: server.js): " entry_point
+    entry_point=${entry_point:-server.js}
+    read -p "Jalankan sebagai user apa? (default: www-data): " run_user
+    run_user=${run_user:-www-data}
+    service_file="/etc/systemd/system/${service_name}.service"
+    cat > "$service_file" <<EOF
+[Unit]
+Description=Node.js App ($service_name)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$app_path
+ExecStart=/usr/bin/node $entry_point
+Restart=always
+User=$run_user
+Environment=NODE_ENV=production
+StandardOutput=append:$app_path/app.log
+StandardError=append:$app_path/app.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable "$service_name"
+    systemctl restart "$service_name"
+    log_info "Service systemd $service_name berhasil dibuat dan dijalankan!"
+    echo "Cek status: sudo systemctl status $service_name"
+    echo "Lihat log: tail -f $app_path/app.log"
 } 

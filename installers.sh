@@ -75,7 +75,7 @@ install_database() {
             read -p "Pilihan [1-2]: " user_choice
             case $user_choice in
                 1) configure_mysql_user ;;
-                2) mysql_change_root ;;
+                2) ;; # Hapus seluruh fungsi mysql_change_root dan logic terkait ganti user root MySQL dari script ini.
                 *) log_error "Pilihan tidak valid" ;;
             esac
             if [ "$db_choice" = "1" ]; then

@@ -27,12 +27,12 @@
 *** HARUS! Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall) ***
 ================================================================================
 --- Instalasi Dasar ---           --- Optimasi & Keamanan ---   --- Utilitas ---
-1. Install PHP                    10. Optimasi Server           14. Info Sistem (modern)
+1. Install PHP                    10. Optimasi Server           14. Tampilkan Info Sistem
 2. Install Nginx                  11. Sistem Cache              15. Ganti User MySQL
-3. Install Database               12. Security Hardening        16. Aktifkan SSL
-4. Install phpMyAdmin             13. Sistem Backup             0. Keluar
-5. Install Node.js & npm                                      17. Cek Ekstensi PHP Terinstall
-6. Install FrankenPHP                                         18. Cek Ekstensi PHP Terinstall
+3. Install Database               12. Security Hardening        16. Aktifkan SSL Semua Domain
+4. Install phpMyAdmin             13. Sistem Backup             17. Cek Ekstensi PHP
+5. Install Node.js & npm                                      18. Cek Ekstensi PHP Terinstall
+6. Install FrankenPHP                                         19. Cek Ekstensi PHP Terinstall
 7. Install WordPress
 8. Konfigurasi Aplikasi Web
 9. Konfigurasi PHP
@@ -60,7 +60,7 @@
    - Untuk SSL, gunakan menu "Aktifkan SSL untuk Semua Domain" agar semua domain yang belum HTTPS bisa diaktifkan sekaligus.
 5. **Utilitas tambahan:**
    - **Info Sistem Modern:** Menu utilitas menampilkan info sistem (CPU, RAM, disk, webserver, dsb) dengan tampilan modern dan interaktif (systeminfo.sh).
-   - **Cek Ekstensi PHP Terinstall:** Tampilkan semua ekstensi PHP yang aktif dalam tabel 3 kolom, cocok untuk troubleshooting aplikasi PHP.
+   - **Cek Ekstensi PHP:** Tampilkan semua ekstensi PHP yang aktif dalam tabel 3 kolom, cocok untuk troubleshooting aplikasi PHP.
 
 > **Catatan:** Pengaturan mirror APT sekarang hanya bisa dilakukan dari menu Setup Dasar VPS (akan ditanya otomatis sebelum update/upgrade), tidak tersedia lagi di menu utama/utilitas.
 
