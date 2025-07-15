@@ -609,7 +609,7 @@ server {
     listen 80;
     listen [::]:80;
     server_name ${domain_name} www.${domain_name};
-    return 301 https://$host$request_uri;
+    return 301 https://\$host\$request_uri;
 }
 
 # Server block HTTPS utama
@@ -648,14 +648,14 @@ server {
 
     # Konfigurasi utama WordPress
     location / {
-        try_files $uri $uri/ /index.php?$args;
+        try_files \$uri \$uri/ /index.php?\$args;
     }
 
     # PHP-FPM handler
-    location ~ \.php$ {
+    location ~ \.php\$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }
 
