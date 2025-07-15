@@ -25,15 +25,14 @@ install_php() {
         *) log_warning "Pilihan tidak valid, menggunakan default 8.2"; selected_php_version="8.2" ;;
     esac
     echo "[1/2] Update repository..."
-    apt update > /dev/null 2>&1 & show_progress
+    apt update
     echo "[2/2] Install paket PHP dan ekstensi..."
     apt install -y php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
                    php${selected_php_version}-common php${selected_php_version}-mysql php${selected_php_version}-zip \
                    php${selected_php_version}-gd php${selected_php_version}-mbstring php${selected_php_version}-curl \
                    php${selected_php_version}-xml php${selected_php_version}-bcmath php${selected_php_version}-pgsql \
                    php${selected_php_version}-intl php${selected_php_version}-readline php${selected_php_version}-ldap \
-                   php${selected_php_version}-msgpack php${selected_php_version}-igbinary php${selected_php_version}-redis \
-                   > /dev/null 2>&1 & show_progress
+                   php${selected_php_version}-msgpack php${selected_php_version}-igbinary php${selected_php_version}-redis
     if [ $? -eq 0 ]; then
         log_info "PHP ${selected_php_version} berhasil diinstall!"
         configure_php ${selected_php_version}
@@ -47,7 +46,7 @@ install_webserver() {
     log_info "Menginstal Nginx..."
     add_ppa_if_needed "ondrej/nginx-mainline"
     echo "[1/1] Install Nginx..."
-    apt install -y nginx > /dev/null 2>&1 & show_progress
+    apt install -y nginx
     systemctl restart nginx
     log_info "Nginx berhasil diinstall!"
 }
@@ -63,11 +62,11 @@ install_database() {
             if [ "$db_choice" = "1" ]; then
                 log_info "Menginstal MySQL..."
                 echo "[1/1] Install MySQL..."
-                apt install -y mysql-server > /dev/null 2>&1 & show_progress
+                apt install -y mysql-server
             else
                 log_info "Menginstal MariaDB..."
                 echo "[1/1] Install MariaDB..."
-                apt install -y mariadb-server > /dev/null 2>&1 & show_progress
+                apt install -y mariadb-server
             fi
             mysql_secure_installation
             echo "Pilih opsi manajemen user:"
@@ -88,7 +87,7 @@ install_database() {
         2)
             log_info "Menginstal PostgreSQL..."
             echo "[1/1] Install PostgreSQL..."
-            apt install -y postgresql postgresql-contrib > /dev/null 2>&1 & show_progress
+            apt install -y postgresql postgresql-contrib
             log_info "PostgreSQL berhasil diinstall!"
             ;;
         *) log_error "Pilihan tidak valid" ;;
@@ -490,19 +489,19 @@ install_nodejs() {
 
     # Tambahkan repository Node.js
     log_info "Menambahkan repository Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
+    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
 
     log_info "Menginstal Node.js dan npm..."
     echo "[1/1] Install Node.js dan npm..."
-    apt install -y nodejs > /dev/null 2>&1 & show_progress
+    apt install -y nodejs
 
     # Update npm ke versi terbaru
     log_info "Mengupdate npm ke versi terbaru..."
-    npm install -g npm@latest > /dev/null 2>&1
+    npm install -g npm@latest
 
     # Install beberapa package global yang umum digunakan
     log_info "Menginstal package global (pm2, yarn)..."
-    npm install -g pm2 yarn > /dev/null 2>&1
+    npm install -g pm2 yarn
 
     if command -v node > /dev/null; then
         node_version=$(node -v)
@@ -525,8 +524,8 @@ install_frankenphp() {
 
     log_info "Menginstal FrankenPHP..."
     echo "[1/1] Install FrankenPHP..."
-    apt update > /dev/null 2>&1 & show_progress
-    apt install -y frankenphp > /dev/null 2>&1 & show_progress
+    apt update
+    apt install -y frankenphp
 
     if [ $? -eq 0 ]; then
         log_info "FrankenPHP berhasil diinstall!"
@@ -856,8 +855,8 @@ setup_basic_vps() {
         log_info "Update & upgrade sudah dilakukan, skip."
     else
         log_info "[1/4] Update & Upgrade Sistem..."
-        apt update > /dev/null 2>&1 & show_progress
-        apt upgrade -y > /dev/null 2>&1 & show_progress
+        apt update
+        apt upgrade -y
         log_info "Update & upgrade selesai."
         touch /etc/vps_setup_done_update
     fi
@@ -909,7 +908,7 @@ setup_basic_vps() {
         log_info "UFW (Firewall) sudah aktif, skip."
     else
         log_info "[4/4] Install & Enable UFW (Firewall)..."
-        apt install -y ufw > /dev/null 2>&1 & show_progress
+        apt install -y ufw
         ufw allow OpenSSH
         ufw --force enable
         log_info "UFW aktif. Port SSH diizinkan."
