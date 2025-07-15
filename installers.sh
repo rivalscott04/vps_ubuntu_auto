@@ -821,3 +821,43 @@ offer_ssl_for_all_domains() {
     systemctl reload nginx
     log_info "SSL Let's Encrypt telah diaktifkan untuk domain terpilih."
 } 
+
+setup_basic_vps() {
+    echo
+    log_info "[1/4] Update & Upgrade Sistem..."
+    apt update > /dev/null 2>&1 & show_progress
+    apt upgrade -y > /dev/null 2>&1 & show_progress
+    log_info "Update & upgrade selesai."
+    echo
+    read -p "Masukkan hostname baru untuk VPS: " new_hostname
+    if [ -n "$new_hostname" ]; then
+        hostnamectl set-hostname "$new_hostname"
+        log_info "Hostname diubah menjadi $new_hostname"
+    else
+        log_warning "Hostname tidak diubah."
+    fi
+    echo
+    read -p "Masukkan timezone (misal: Asia/Jakarta): " timezone
+    if [ -n "$timezone" ]; then
+        timedatectl set-timezone "$timezone"
+        log_info "Timezone diubah menjadi $timezone"
+    else
+        log_warning "Timezone tidak diubah."
+    fi
+    echo
+    read -p "Masukkan locale (misal: en_US.UTF-8): " locale
+    if [ -n "$locale" ]; then
+        update-locale LANG=$locale
+        log_info "Locale diubah menjadi $locale"
+    else
+        log_warning "Locale tidak diubah."
+    fi
+    echo
+    log_info "[4/4] Install & Enable UFW (Firewall)..."
+    apt install -y ufw > /dev/null 2>&1 & show_progress
+    ufw allow OpenSSH
+    ufw --force enable
+    log_info "UFW aktif. Port SSH diizinkan."
+    echo
+    log_info "Setup dasar VPS selesai! Sangat disarankan reboot setelah ini."
+} 

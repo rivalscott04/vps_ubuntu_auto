@@ -14,7 +14,7 @@ fi
 while true; do
     clear
     echo "=============================="
-    echo "     Auto Setup VPS Menu     "
+    echo "*** HARUS! Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall) ***"
     echo "=============================="
     printf "%-35s %-35s %-35s\n" "--- Instalasi Dasar ---" "--- Optimasi & Keamanan ---" "--- Utilitas ---"
     printf "%-35s %-35s %-35s\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Informasi Sistem"
@@ -27,9 +27,10 @@ while true; do
     printf "%-35s %-35s %-35s\n" "8. Konfigurasi Aplikasi Web" "" ""
     printf "%-35s %-35s %-35s\n" "9. Konfigurasi PHP" "" ""
     echo "=============================="
-    read -p "Pilihan [0-15]: " choice
+    read -p "Pilihan [0-16]: " choice
 
     case $choice in
+        99) setup_basic_vps ;;
         1) install_php ;;
         2) install_webserver ;;
         3) install_database ;;
