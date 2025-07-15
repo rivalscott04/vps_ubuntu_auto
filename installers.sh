@@ -516,6 +516,7 @@ install_wordpress() {
             fi
         done
     fi
+    # Pastikan selected_php_version terisi
     if [ -z "$selected_php_version" ]; then
         log_error "PHP belum terinstal. Silakan install PHP terlebih dahulu."
         return 1
@@ -610,10 +611,10 @@ server {
     index index.php index.html index.htm;
 
     # Block access to sensitive files
-    location ~* \\.(htaccess|htpasswd|ini|log|sh|sql|conf)$ { deny all; }
-    location ~* wp-config\\.php { deny all; }
+    location ~* \.(htaccess|htpasswd|ini|log|sh|sql|conf)$ { deny all; }
+    location ~* wp-config\.php { deny all; }
     location = /xmlrpc.php { deny all; }
-    location ~* ^/wp-content/uploads/.*\\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ { deny all; }
+    location ~* ^/wp-content/uploads/.*\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ { deny all; }
 
     # WordPress permalinks
     location / {
@@ -621,7 +622,7 @@ server {
     }
 
     # Handle PHP files
-    location ~ \\.php$ {
+    location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
@@ -629,7 +630,7 @@ server {
     }
 
     # Cache static files
-    location ~* \\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
         expires 1y;
         add_header Cache-Control "public, immutable";
         access_log off;
