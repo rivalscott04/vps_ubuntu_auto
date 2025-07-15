@@ -7,26 +7,16 @@ add_php_repository() {
 
 install_php() {
     add_php_repository
-    apt update > /dev/null 2>&1
-    echo "Pilih versi PHP yang akan diinstall:"
-    echo "1. PHP 8.1"
-    echo "2. PHP 8.2"
-    echo "3. PHP 8.3"
-    read -p "Pilihan [1-3]: " php_choice
-    case $php_choice in
-        1) selected_php_version="8.1" ;;
-        2) selected_php_version="8.2" ;;
-        3) selected_php_version="8.3" ;;
-        *) log_error "Pilihan tidak valid"; return ;;
-    esac
-    log_info "Menginstal PHP ${selected_php_version} dan ekstensi..."
+    echo "[1/2] Update repository..."
+    apt update > /dev/null 2>&1 & show_progress
+    echo "[2/2] Install paket PHP dan ekstensi..."
     apt install -y php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
                    php${selected_php_version}-common php${selected_php_version}-mysql php${selected_php_version}-zip \
                    php${selected_php_version}-gd php${selected_php_version}-mbstring php${selected_php_version}-curl \
                    php${selected_php_version}-xml php${selected_php_version}-bcmath php${selected_php_version}-pgsql \
                    php${selected_php_version}-intl php${selected_php_version}-readline php${selected_php_version}-ldap \
                    php${selected_php_version}-msgpack php${selected_php_version}-igbinary php${selected_php_version}-redis \
-                   > /dev/null 2>&1
+                   > /dev/null 2>&1 & show_progress
     if [ $? -eq 0 ]; then
         log_info "PHP ${selected_php_version} berhasil diinstall!"
         configure_php ${selected_php_version}
@@ -39,7 +29,8 @@ install_php() {
 install_webserver() {
     log_info "Menginstal Nginx..."
     add_ppa_if_needed "ondrej/nginx-mainline"
-    apt install -y nginx > /dev/null 2>&1
+    echo "[1/1] Install Nginx..."
+    apt install -y nginx > /dev/null 2>&1 & show_progress
     systemctl restart nginx
     log_info "Nginx berhasil diinstall!"
 }
@@ -54,10 +45,12 @@ install_database() {
         1|3)
             if [ "$db_choice" = "1" ]; then
                 log_info "Menginstal MySQL..."
-                apt install -y mysql-server > /dev/null 2>&1
+                echo "[1/1] Install MySQL..."
+                apt install -y mysql-server > /dev/null 2>&1 & show_progress
             else
                 log_info "Menginstal MariaDB..."
-                apt install -y mariadb-server > /dev/null 2>&1
+                echo "[1/1] Install MariaDB..."
+                apt install -y mariadb-server > /dev/null 2>&1 & show_progress
             fi
             mysql_secure_installation
             echo "Pilih opsi manajemen user:"
@@ -77,7 +70,8 @@ install_database() {
             ;;
         2)
             log_info "Menginstal PostgreSQL..."
-            apt install -y postgresql postgresql-contrib > /dev/null 2>&1
+            echo "[1/1] Install PostgreSQL..."
+            apt install -y postgresql postgresql-contrib > /dev/null 2>&1 & show_progress
             log_info "PostgreSQL berhasil diinstall!"
             ;;
         *) log_error "Pilihan tidak valid" ;;
@@ -482,7 +476,8 @@ install_nodejs() {
     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - > /dev/null 2>&1
 
     log_info "Menginstal Node.js dan npm..."
-    apt install -y nodejs > /dev/null 2>&1
+    echo "[1/1] Install Node.js dan npm..."
+    apt install -y nodejs > /dev/null 2>&1 & show_progress
 
     # Update npm ke versi terbaru
     log_info "Mengupdate npm ke versi terbaru..."
@@ -512,8 +507,9 @@ install_frankenphp() {
     echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list > /dev/null
 
     log_info "Menginstal FrankenPHP..."
-    apt update > /dev/null 2>&1
-    apt install -y frankenphp > /dev/null 2>&1
+    echo "[1/1] Install FrankenPHP..."
+    apt update > /dev/null 2>&1 & show_progress
+    apt install -y frankenphp > /dev/null 2>&1 & show_progress
 
     if [ $? -eq 0 ]; then
         log_info "FrankenPHP berhasil diinstall!"
@@ -774,25 +770,54 @@ EOF
 
 offer_ssl_for_all_domains() {
     log_info "Mendeteksi domain yang belum memiliki SSL..."
+    local domains=()
+    local confs=()
+    local i=1
     for conf in /etc/nginx/sites-enabled/*; do
         [ -e "$conf" ] || continue
         domain=$(basename "$conf")
-        # Cek apakah sudah ada listen 443 atau ssl_certificate
-        if grep -q 'listen 443' "$conf" || grep -q 'ssl_certificate' "$conf"; then
-            log_info "Domain $domain sudah memiliki SSL."
-        else
-            echo
-            log_warning "Domain $domain belum memiliki SSL."
-            read -p "Aktifkan SSL gratis (Let's Encrypt) untuk $domain? (y/n): " enable_ssl
-            if [ "$enable_ssl" = "y" ]; then
-                log_info "Menginstal certbot dan plugin nginx..."
-                apt update && apt install -y certbot python3-certbot-nginx
-                log_info "Menjalankan certbot untuk domain $domain..."
-                certbot --nginx -d $domain --non-interactive --agree-tos -m admin@$domain || log_warning "Certbot gagal, cek log untuk detail."
-                systemctl reload nginx
-                log_info "SSL Let's Encrypt telah diaktifkan untuk https://$domain"
-            fi
+        # Kecualikan localhost dan 127.0.0.1
+        if [[ "$domain" =~ localhost|127.0.0.1 ]]; then
+            continue
         fi
+        if grep -q 'listen 443' "$conf" || grep -q 'ssl_certificate' "$conf"; then
+            continue
+        fi
+        domains+=("$domain")
+        confs+=("$conf")
     done
-    log_info "Pengecekan SSL selesai."
+    if [ ${#domains[@]} -eq 0 ]; then
+        log_info "Semua domain sudah memiliki SSL atau tidak ada domain yang terdeteksi."
+        return
+    fi
+    echo "\nDomain yang belum memiliki SSL:"
+    for idx in "${!domains[@]}"; do
+        printf "%2d. %s\n" $((idx+1)) "${domains[$idx]}"
+    done
+    echo
+    read -p "Masukkan nomor domain yang ingin diaktifkan SSL (pisahkan dengan spasi/koma, atau ketik 'all' untuk semua): " input
+    if [[ "$input" == "all" ]]; then
+        selected=("${domains[@]}")
+    else
+        IFS=', ' read -ra nums <<< "$input"
+        selected=()
+        for n in "${nums[@]}"; do
+            n=$(echo $n | tr -d ' ')
+            if [[ $n =~ ^[0-9]+$ ]] && (( n >= 1 && n <= ${#domains[@]} )); then
+                selected+=("${domains[$((n-1))]}")
+            fi
+        done
+    fi
+    if [ ${#selected[@]} -eq 0 ]; then
+        log_warning "Tidak ada domain yang dipilih."
+        return
+    fi
+    log_info "Akan mengaktifkan SSL untuk: ${selected[*]}"
+    apt update && apt install -y certbot python3-certbot-nginx
+    for domain in "${selected[@]}"; do
+        log_info "Menjalankan certbot untuk domain $domain..."
+        certbot --nginx -d $domain --non-interactive --agree-tos -m admin@$domain || log_warning "Certbot gagal untuk $domain, cek log untuk detail."
+    done
+    systemctl reload nginx
+    log_info "SSL Let's Encrypt telah diaktifkan untuk domain terpilih."
 } 
