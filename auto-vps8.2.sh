@@ -41,19 +41,22 @@ while true; do
         read -p "Tekan Enter untuk melanjutkan..."
         continue
     fi
-    # Jika setup dasar sudah selesai, tampilkan menu lengkap
-    printf "%-35s %-35s %-35s\n" "--- Instalasi Dasar ---" "--- Optimasi & Keamanan ---" "--- Utilitas ---"
-    printf "%-35s %-35s %-35s\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Informasi Sistem (modern)"
-    printf "%-35s %-35s %-35s\n" "2. Install Nginx" "11. Instalasi Sistem Cache" "15. Ganti User Root MySQL"
-    printf "%-35s %-35s %-35s\n" "3. Install Database" "12. Security Hardening" "16. Aktifkan SSL untuk Semua Domain"
-    printf "%-35s %-35s %-35s\n" "4. Install phpMyAdmin" "13. Sistem Backup" "17. Cek Ekstensi PHP Terinstall"
-    printf "%-35s %-35s %-35s\n" "5. Install Node.js & npm" "" ""
-    printf "%-35s %-35s %-35s\n" "6. Install FrankenPHP" "" ""
-    printf "%-35s %-35s %-35s\n" "7. Install WordPress" "" ""
-    printf "%-35s %-35s %-35s\n" "8. Konfigurasi Aplikasi Web" "" ""
-    printf "%-35s %-35s %-35s\n" "9. Konfigurasi PHP" "" ""
-    printf "%-105s\n" "0. Keluar"
-    echo "=============================="
+    # Jika setup dasar sudah selesai, tampilkan menu lengkap dalam tabel penuh
+    echo "┌───────────────────────────────────────────────┬───────────────────────────────────────────────┬───────────────────────────────────────────────┐"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "--- Instalasi Dasar ---" "--- Optimasi & Keamanan ---" "--- Utilitas ---"
+    echo "├───────────────────────────────────────────────┼───────────────────────────────────────────────┼───────────────────────────────────────────────┤"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Informasi Sistem (modern)"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "2. Install Nginx" "11. Instalasi Sistem Cache" "15. Ganti User Root MySQL"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "3. Install Database" "12. Security Hardening" "16. Aktifkan SSL untuk Semua Domain"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "4. Install phpMyAdmin" "13. Sistem Backup" "17. Cek Ekstensi PHP Terinstall"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "5. Install Node.js & npm" "" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "6. Install FrankenPHP" "" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "7. Install WordPress" "" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "8. Konfigurasi Aplikasi Web" "" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi PHP" "" ""
+    echo "├───────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────┤"
+    printf "│ %-111s │\n" "0. Keluar"
+    echo "└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
     read -p "Pilihan [0-16]: " choice
     case $choice in
         99) setup_basic_vps ;;
