@@ -55,3 +55,92 @@ show_progress() {
     tput cnorm 2>/dev/null
     printf "    \b\b\b\b"
 } 
+
+# Helper untuk handle APT lock
+safe_apt_update() {
+    echo -e "\e[1;36m[INFO]\e[0m Akan menjalankan: apt update"
+    while true; do
+        apt update 2>&1 | tee /tmp/aptlog
+        if grep -q "Could not get lock" /tmp/aptlog; then
+            pid=$(grep -oP 'held by process \\K[0-9]+' /tmp/aptlog | head -n1)
+            pname=$(ps -p $pid -o comm=)
+            echo -e "\e[1;33m[LOCK]\e[0m Lock APT sedang dipegang oleh proses: $pname (PID: $pid)"
+            echo "1. Tunggu dan coba lagi"
+            echo "2. Matikan proses $pid"
+            echo "3. Batal"
+            read -p "Pilih [1-3]: " opt
+            case $opt in
+                1) sleep 5;;
+                2) kill -9 $pid; echo "Proses $pid dimatikan. Ulangi perintah apt...";;
+                3) return 1;;
+                *) echo "Pilihan tidak valid, ulangi.";;
+            esac
+        elif grep -q "E: "; then
+            echo -e "\e[1;31m[ERROR]\e[0m apt update gagal:"
+            grep "E: " /tmp/aptlog
+            return 1
+        else
+            echo -e "\e[1;32m[SUKSES]\e[0m apt update selesai."
+            break
+        fi
+    done
+}
+
+safe_apt_upgrade() {
+    echo -e "\e[1;36m[INFO]\e[0m Akan menjalankan: apt upgrade -y"
+    while true; do
+        apt upgrade -y 2>&1 | tee /tmp/aptlog
+        if grep -q "Could not get lock" /tmp/aptlog; then
+            pid=$(grep -oP 'held by process \\K[0-9]+' /tmp/aptlog | head -n1)
+            pname=$(ps -p $pid -o comm=)
+            echo -e "\e[1;33m[LOCK]\e[0m Lock APT sedang dipegang oleh proses: $pname (PID: $pid)"
+            echo "1. Tunggu dan coba lagi"
+            echo "2. Matikan proses $pid"
+            echo "3. Batal"
+            read -p "Pilih [1-3]: " opt
+            case $opt in
+                1) sleep 5;;
+                2) kill -9 $pid; echo "Proses $pid dimatikan. Ulangi perintah apt...";;
+                3) return 1;;
+                *) echo "Pilihan tidak valid, ulangi.";;
+            esac
+        elif grep -q "E: " /tmp/aptlog; then
+            echo -e "\e[1;31m[ERROR]\e[0m apt upgrade gagal:"
+            grep "E: " /tmp/aptlog
+            return 1
+        else
+            echo -e "\e[1;32m[SUKSES]\e[0m apt upgrade selesai."
+            break
+        fi
+    done
+}
+
+safe_apt_install() {
+    # $@ = paket yang ingin diinstall
+    echo -e "\e[1;36m[INFO]\e[0m Akan menginstall: $*"
+    while true; do
+        apt install -y "$@" 2>&1 | tee /tmp/aptlog
+        if grep -q "Could not get lock" /tmp/aptlog; then
+            pid=$(grep -oP 'held by process \\K[0-9]+' /tmp/aptlog | head -n1)
+            pname=$(ps -p $pid -o comm=)
+            echo -e "\e[1;33m[LOCK]\e[0m Lock APT sedang dipegang oleh proses: $pname (PID: $pid)"
+            echo "1. Tunggu dan coba lagi"
+            echo "2. Matikan proses $pid"
+            echo "3. Batal"
+            read -p "Pilih [1-3]: " opt
+            case $opt in
+                1) sleep 5;;
+                2) kill -9 $pid; echo "Proses $pid dimatikan. Ulangi perintah apt...";;
+                3) return 1;;
+                *) echo "Pilihan tidak valid, ulangi.";;
+            esac
+        elif grep -q "E: " /tmp/aptlog; then
+            echo -e "\e[1;31m[ERROR]\e[0m apt install gagal:"
+            grep "E: " /tmp/aptlog
+            return 1
+        else
+            echo -e "\e[1;32m[SUKSES]\e[0m Berhasil menginstall: $*"
+            break
+        fi
+    done
+} 

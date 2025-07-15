@@ -25,9 +25,9 @@ install_php() {
         *) log_warning "Pilihan tidak valid, menggunakan default 8.2"; selected_php_version="8.2" ;;
     esac
     echo "[1/2] Update repository..."
-    apt update
+    safe_apt_update
     echo "[2/2] Install paket PHP dan ekstensi..."
-    apt install -y php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
+    safe_apt_install php${selected_php_version} php${selected_php_version}-fpm php${selected_php_version}-cli \
                    php${selected_php_version}-common php${selected_php_version}-mysql php${selected_php_version}-zip \
                    php${selected_php_version}-gd php${selected_php_version}-mbstring php${selected_php_version}-curl \
                    php${selected_php_version}-xml php${selected_php_version}-bcmath php${selected_php_version}-pgsql \
@@ -46,7 +46,7 @@ install_webserver() {
     log_info "Menginstal Nginx..."
     add_ppa_if_needed "ondrej/nginx-mainline"
     echo "[1/1] Install Nginx..."
-    apt install -y nginx
+    safe_apt_install -y nginx
     systemctl restart nginx
     log_info "Nginx berhasil diinstall!"
 }
@@ -62,11 +62,11 @@ install_database() {
             if [ "$db_choice" = "1" ]; then
                 log_info "Menginstal MySQL..."
                 echo "[1/1] Install MySQL..."
-                apt install -y mysql-server
+                safe_apt_install -y mysql-server
             else
                 log_info "Menginstal MariaDB..."
                 echo "[1/1] Install MariaDB..."
-                apt install -y mariadb-server
+                safe_apt_install -y mariadb-server
             fi
             mysql_secure_installation
             echo "Pilih opsi manajemen user:"
@@ -87,7 +87,7 @@ install_database() {
         2)
             log_info "Menginstal PostgreSQL..."
             echo "[1/1] Install PostgreSQL..."
-            apt install -y postgresql postgresql-contrib
+            safe_apt_install -y postgresql postgresql-contrib
             log_info "PostgreSQL berhasil diinstall!"
             ;;
         *) log_error "Pilihan tidak valid" ;;
@@ -416,7 +416,7 @@ EOF
             read -p "Ingin mengaktifkan SSL gratis (Let's Encrypt) untuk domain ${domain_name}? (y/n): " enable_ssl
             if [ "$enable_ssl" = "y" ]; then
                 log_info "Menginstal certbot dan plugin nginx..."
-                apt update && apt install -y certbot python3-certbot-nginx
+                safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
                 log_info "Menjalankan certbot untuk domain ${domain_name}..."
                 certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
                 systemctl reload nginx
@@ -487,13 +487,17 @@ install_nodejs() {
     log_info "Mempersiapkan instalasi Node.js dan npm..."
     check_and_install_package curl
 
-    # Tambahkan repository Node.js
-    log_info "Menambahkan repository Node.js..."
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    # Tambahkan repository Node.js jika belum ada
+    if [ ! -f /etc/apt/sources.list.d/nodesource.list ]; then
+        log_info "Menambahkan repository Node.js..."
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    else
+        log_info "Repository Node.js sudah ada, skip."
+    fi
 
     log_info "Menginstal Node.js dan npm..."
     echo "[1/1] Install Node.js dan npm..."
-    apt install -y nodejs
+    safe_apt_install -y nodejs
 
     # Update npm ke versi terbaru
     log_info "Mengupdate npm ke versi terbaru..."
@@ -518,14 +522,18 @@ install_frankenphp() {
     check_and_install_package curl
     check_and_install_package gpg
 
-    # Tambahkan repository FrankenPHP
-    curl -sSL https://deb.frankenphp.dev/frankenphp.asc | gpg --dearmor -o /usr/share/keyrings/frankenphp-archive-keyring.gpg
-    echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list > /dev/null
+    # Tambahkan repository FrankenPHP jika belum ada
+    if [ ! -f /etc/apt/sources.list.d/frankenphp.list ]; then
+        curl -sSL https://deb.frankenphp.dev/frankenphp.asc | gpg --dearmor -o /usr/share/keyrings/frankenphp-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/frankenphp-archive-keyring.gpg] https://deb.frankenphp.dev jammy main" | tee /etc/apt/sources.list.d/frankenphp.list > /dev/null
+    else
+        log_info "Repository FrankenPHP sudah ada, skip."
+    fi
 
     log_info "Menginstal FrankenPHP..."
     echo "[1/1] Install FrankenPHP..."
-    apt update
-    apt install -y frankenphp
+    safe_apt_update
+    safe_apt_install -y frankenphp
 
     if [ $? -eq 0 ]; then
         log_info "FrankenPHP berhasil diinstall!"
@@ -769,7 +777,7 @@ EOF
         read -p "Ingin mengaktifkan SSL gratis (Let's Encrypt) untuk domain ${domain_name}? (y/n): " enable_ssl
         if [ "$enable_ssl" = "y" ]; then
             log_info "Menginstal certbot dan plugin nginx..."
-            apt update && apt install -y certbot python3-certbot-nginx
+            safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
             log_info "Menjalankan certbot untuk domain ${domain_name}..."
             certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
             systemctl reload nginx
@@ -829,7 +837,7 @@ offer_ssl_for_all_domains() {
         return
     fi
     log_info "Akan mengaktifkan SSL untuk: ${selected[*]}"
-    apt update && apt install -y certbot python3-certbot-nginx
+    safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
     for domain in "${selected[@]}"; do
         log_info "Menjalankan certbot untuk domain $domain..."
         certbot --nginx -d $domain --non-interactive --agree-tos -m admin@$domain || log_warning "Certbot gagal untuk $domain, cek log untuk detail."
@@ -855,8 +863,8 @@ setup_basic_vps() {
         log_info "Update & upgrade sudah dilakukan, skip."
     else
         log_info "[1/4] Update & Upgrade Sistem..."
-        apt update
-        apt upgrade -y
+        safe_apt_update
+        safe_apt_upgrade -y
         log_info "Update & upgrade selesai."
         touch /etc/vps_setup_done_update
     fi
@@ -908,7 +916,7 @@ setup_basic_vps() {
         log_info "UFW (Firewall) sudah aktif, skip."
     else
         log_info "[4/4] Install & Enable UFW (Firewall)..."
-        apt install -y ufw
+        safe_apt_install -y ufw
         ufw allow OpenSSH
         ufw --force enable
         log_info "UFW aktif. Port SSH diizinkan."

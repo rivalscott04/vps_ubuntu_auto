@@ -109,3 +109,7 @@
 > **Script ini cocok untuk provisioning VPS baru, siap pakai untuk web hosting modern!**
 > 
 > _By: Rival & AI Assistant_
+
+---
+
+<p align="center">Made with ❤️ by Rival</p>
