@@ -604,24 +604,54 @@ install_wordpress() {
     nginx_conf="/etc/nginx/sites-available/${domain_name}"
     log_info "Membuat konfigurasi Nginx untuk ${domain_name}..."
     cat > "$nginx_conf" <<EOF
+# Redirect HTTP to HTTPS
 server {
     listen 80;
-    server_name ${domain_name};
+    listen [::]:80;
+    server_name ${domain_name} www.${domain_name};
+    return 301 https://$host$request_uri;
+}
+
+# Server block HTTPS utama
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${domain_name} www.${domain_name};
+
     root ${wp_path};
     index index.php index.html index.htm;
 
-    # Block access to sensitive files
-    location ~* \.(htaccess|htpasswd|ini|log|sh|sql|conf)$ { deny all; }
-    location ~* wp-config\.php { deny all; }
-    location = /xmlrpc.php { deny all; }
-    location ~* ^/wp-content/uploads/.*\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ { deny all; }
+    # Sertifikat SSL Let's Encrypt
+    ssl_certificate /etc/letsencrypt/live/${domain_name}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${domain_name}/privkey.pem;
 
-    # WordPress permalinks
+    # Konfigurasi SSL best practice
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    ssl_session_cache shared:SSL:10m;
+
+    # Header keamanan
+    add_header X-Content-Type-Options nosniff;
+    add_header X-Frame-Options SAMEORIGIN;
+    add_header X-XSS-Protection "1; mode=block";
+
+    # Logging
+    access_log /var/log/nginx/${domain_name}.access.log;
+    error_log /var/log/nginx/${domain_name}.error.log;
+
+    # Izinkan certbot renew
+    location ~ ^/.well-known/acme-challenge/ {
+        allow all;
+        root ${wp_path};
+    }
+
+    # Konfigurasi utama WordPress
     location / {
         try_files $uri $uri/ /index.php?$args;
     }
 
-    # Handle PHP files
+    # PHP-FPM handler
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
@@ -629,15 +659,10 @@ server {
         include fastcgi_params;
     }
 
-    # Cache static files
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
-        expires 1y;
-        add_header Cache-Control "public, immutable";
-        access_log off;
+    # Blokir akses file tersembunyi
+    location ~ /\.ht {
+        deny all;
     }
-
-    error_log /var/log/nginx/${domain_name}_error.log;
-    access_log /var/log/nginx/${domain_name}_access.log;
 }
 EOF
 
