@@ -42,7 +42,18 @@ configure_webapp() {
     echo "3. Node.js/Express"
     echo "4. React/Vite (static, folder dist)"
     read -p "Pilihan [1-4]: " app_type
-    read -p "Masukkan domain/subdomain (misal: app.domain.com): " domain_name
+    echo "Apakah ingin menggunakan domain utama atau subdomain?"
+    echo "1. Domain utama (misal: domain.com)"
+    echo "2. Subdomain (misal: app.domain.com)"
+    read -p "Pilihan [1-2]: " domain_type
+    if [ "$domain_type" = "2" ]; then
+        read -p "Masukkan domain utama (misal: domain.com): " main_domain
+        read -p "Masukkan subdomain (misal: app): " subdomain
+        subdomain=${subdomain:-app}
+        domain_name="${subdomain}.${main_domain}"
+    else
+        read -p "Masukkan domain (misal: domain.com): " domain_name
+    fi
     read -p "Masukkan path root aplikasi (misal: /var/www/app): " app_path
     case $app_type in
         1)
