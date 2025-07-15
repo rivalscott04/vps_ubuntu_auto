@@ -7,6 +7,23 @@ add_php_repository() {
 
 install_php() {
     add_php_repository
+    echo "Pilih versi PHP yang ingin diinstall:"
+    echo "1. PHP 8.4 (jika tersedia)"
+    echo "2. PHP 8.3"
+    echo "3. PHP 8.2"
+    echo "4. PHP 8.1"
+    echo "5. PHP 8.0"
+    echo "6. PHP 7.4"
+    read -p "Pilihan [1-6]: " php_choice
+    case $php_choice in
+        1) selected_php_version="8.4" ;;
+        2) selected_php_version="8.3" ;;
+        3) selected_php_version="8.2" ;;
+        4) selected_php_version="8.1" ;;
+        5) selected_php_version="8.0" ;;
+        6) selected_php_version="7.4" ;;
+        *) log_warning "Pilihan tidak valid, menggunakan default 8.2"; selected_php_version="8.2" ;;
+    esac
     echo "[1/2] Update repository..."
     apt update > /dev/null 2>&1 & show_progress
     echo "[2/2] Install paket PHP dan ekstensi..."
