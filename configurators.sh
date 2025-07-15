@@ -110,4 +110,45 @@ mysql_change_root() {
     log_info "Mengubah root password MySQL..."
     # Placeholder for MySQL root password change logic
     log_info "Ubah password root MySQL selesai!"
+}
+
+# === Ganti Mirror APT ===
+change_apt_mirror() {
+    log_info "Pilih mirror APT yang ingin digunakan:"
+    echo "1. Australia (mirror.aarnet.edu.au)"
+    echo "2. Singapore (sg.archive.ubuntu.com)"
+    echo "3. Vietnam (vn.archive.ubuntu.com)"
+    echo "0. Batal"
+    read -p "Pilihan [1-3/0]: " mirror_choice
+    case $mirror_choice in
+        1)
+            mirror_url="http://mirror.aarnet.edu.au/pub/ubuntu/"
+            ;;
+        2)
+            mirror_url="http://sg.archive.ubuntu.com/ubuntu/"
+            ;;
+        3)
+            mirror_url="http://vn.archive.ubuntu.com/ubuntu/"
+            ;;
+        0)
+            log_info "Batal mengubah mirror."
+            return
+            ;;
+        *)
+            log_error "Pilihan tidak valid."
+            return
+            ;;
+    esac
+    if [ ! -f /etc/apt/sources.list ]; then
+        log_error "/etc/apt/sources.list tidak ditemukan!"
+        return
+    fi
+    cp /etc/apt/sources.list /etc/apt/sources.list.backup.$(date +%Y%m%d%H%M%S)
+    log_info "Backup sources.list selesai."
+    # Ganti semua baris deb/deb-src utama ke mirror baru
+    sed -i "s|http[s]\?://[a-zA-Z0-9./-]*/ubuntu/|$mirror_url|g" /etc/apt/sources.list
+    log_info "Mirror APT berhasil diubah ke: $mirror_url"
+    log_info "Menjalankan apt update untuk refresh repository..."
+    apt update
+    log_info "Selesai. Jika terjadi error, restore dengan: sudo cp /etc/apt/sources.list.backup.YYYYMMDDHHMMSS /etc/apt/sources.list"
 } 

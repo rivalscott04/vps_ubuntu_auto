@@ -47,7 +47,7 @@ while true; do
     printf "%-35s %-35s %-35s\n" "2. Install Nginx" "11. Instalasi Sistem Cache" "15. Ganti User Root MySQL"
     printf "%-35s %-35s %-35s\n" "3. Install Database" "12. Security Hardening" "16. Aktifkan SSL untuk Semua Domain"
     printf "%-35s %-35s %-35s\n" "4. Install phpMyAdmin" "13. Sistem Backup" "0. Keluar"
-    printf "%-35s %-35s %-35s\n" "5. Install Node.js & npm" "" ""
+    printf "%-35s %-35s %-35s\n" "5. Install Node.js & npm" "" "17. Ganti Mirror APT Ubuntu"
     printf "%-35s %-35s %-35s\n" "6. Install FrankenPHP" "" ""
     printf "%-35s %-35s %-35s\n" "7. Install WordPress" "" ""
     printf "%-35s %-35s %-35s\n" "8. Konfigurasi Aplikasi Web" "" ""
@@ -72,6 +72,7 @@ while true; do
         14) show_system_info ;;
         15) mysql_change_root ;;
         16) offer_ssl_for_all_domains ;;
+        17) change_apt_mirror ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;
