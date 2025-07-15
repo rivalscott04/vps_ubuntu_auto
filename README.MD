@@ -14,6 +14,8 @@
 - 🌐 **Nginx, Database, Node.js, FrankenPHP, WordPress, phpMyAdmin** — Semua siap satu klik.
 - 🔒 **SSL Let's Encrypt Otomatis** — Deteksi domain yang belum HTTPS, aktifkan sekaligus.
 - ⏳ **Progress Bar & Spinner** — Proses install lebih informatif.
+- 🧭 **Ganti Mirror APT** — Pilih mirror negara atau otomatis cari mirror tercepat (netselect).
+- 🧩 **Cek Ekstensi PHP Terinstall** — Tampilkan semua ekstensi PHP dalam tabel 3 kolom.
 - 🧩 **Struktur Modular** — Mudah di-maintain: `utils.sh`, `installers.sh`, `configurators.sh`.
 
 ---
@@ -28,8 +30,8 @@
 2. Install Nginx                  11. Sistem Cache              15. Ganti User MySQL
 3. Install Database               12. Security Hardening        16. Aktifkan SSL
 4. Install phpMyAdmin             13. Sistem Backup             0. Keluar
-5. Install Node.js & npm
-6. Install FrankenPHP
+5. Install Node.js & npm                                      17. Ganti Mirror APT Ubuntu
+6. Install FrankenPHP                                         18. Cek Ekstensi PHP Terinstall
 7. Install WordPress
 8. Konfigurasi Aplikasi Web
 9. Konfigurasi PHP
@@ -38,7 +40,7 @@
 
 ---
 
-## 🚦 Cara Pakai
+## 🛠️ Cara Pakai & Utilitas
 
 1. **Jadikan script executable:**
    ```bash
@@ -55,6 +57,9 @@
 4. **Lanjutkan instalasi sesuai kebutuhan:**
    - Pilih menu lain (PHP, Nginx, Database, dsb).
    - Untuk SSL, gunakan menu "Aktifkan SSL untuk Semua Domain" agar semua domain yang belum HTTPS bisa diaktifkan sekaligus.
+5. **Utilitas tambahan:**
+   - **Ganti Mirror APT Ubuntu:** Pilih mirror negara (Australia, Singapore, Vietnam) atau otomatis cari mirror tercepat (netselect).
+   - **Cek Ekstensi PHP Terinstall:** Tampilkan semua ekstensi PHP yang aktif dalam tabel 3 kolom, cocok untuk troubleshooting aplikasi PHP.
 
 ---
 

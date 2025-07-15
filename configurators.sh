@@ -118,8 +118,9 @@ change_apt_mirror() {
     echo "1. Australia (mirror.aarnet.edu.au)"
     echo "2. Singapore (sg.archive.ubuntu.com)"
     echo "3. Vietnam (vn.archive.ubuntu.com)"
+    echo "4. Pilih mirror tercepat (otomatis, rekomendasi)"
     echo "0. Batal"
-    read -p "Pilihan [1-3/0]: " mirror_choice
+    read -p "Pilihan [1-4/0]: " mirror_choice
     case $mirror_choice in
         1)
             mirror_url="http://mirror.aarnet.edu.au/pub/ubuntu/"
@@ -129,6 +130,25 @@ change_apt_mirror() {
             ;;
         3)
             mirror_url="http://vn.archive.ubuntu.com/ubuntu/"
+            ;;
+        4)
+            # Install netselect jika belum ada
+            if ! command -v netselect >/dev/null 2>&1; then
+                log_info "Menginstall netselect (dari Debian repo, karena tidak ada di Ubuntu)..."
+                apt install -y wget > /dev/null 2>&1
+                wget -q http://ftp.us.debian.org/debian/pool/main/n/netselect/netselect_0.3.ds1-29_amd64.deb -O /tmp/netselect.deb
+                dpkg -i /tmp/netselect.deb || apt -f install -y
+            fi
+            log_info "Mengambil daftar mirror Ubuntu..."
+            mirrors=$(wget -qO - mirrors.ubuntu.com/mirrors.txt)
+            log_info "Menentukan mirror tercepat, mohon tunggu..."
+            fastest=$(netselect -s 1 -t 40 $mirrors 2>/dev/null | awk '{print $2}' | head -n1)
+            if [ -z "$fastest" ]; then
+                log_error "Gagal menentukan mirror tercepat."
+                return
+            fi
+            mirror_url="$fastest"
+            log_info "Mirror tercepat: $mirror_url"
             ;;
         0)
             log_info "Batal mengubah mirror."
@@ -151,4 +171,24 @@ change_apt_mirror() {
     log_info "Menjalankan apt update untuk refresh repository..."
     apt update
     log_info "Selesai. Jika terjadi error, restore dengan: sudo cp /etc/apt/sources.list.backup.YYYYMMDDHHMMSS /etc/apt/sources.list"
+}
+
+# === Cek Ekstensi PHP Terinstall ===
+check_installed_php_extensions() {
+    local php_version
+    php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    log_info "Daftar ekstensi PHP terinstall untuk PHP $php_version:"
+    local extensions
+    extensions=$(php -m | grep -v "\[" | grep -v "^$" | sort)
+    local count=0
+    local col=3
+    local output=""
+    for ext in $extensions; do
+        output+=$(printf "%-25s" "$ext")
+        count=$((count+1))
+        if (( count % col == 0 )); then
+            output+="\n"
+        fi
+    done
+    echo -e "$output"
 } 
