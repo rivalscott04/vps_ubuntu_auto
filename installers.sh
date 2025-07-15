@@ -828,11 +828,13 @@ setup_basic_vps() {
     apt update > /dev/null 2>&1 & show_progress
     apt upgrade -y > /dev/null 2>&1 & show_progress
     log_info "Update & upgrade selesai."
+    touch /etc/vps_setup_done_update
     echo
     read -p "Masukkan hostname baru untuk VPS: " new_hostname
     if [ -n "$new_hostname" ]; then
         hostnamectl set-hostname "$new_hostname"
         log_info "Hostname diubah menjadi $new_hostname"
+        echo "$new_hostname" > /etc/vps_setup_done_hostname
     else
         log_warning "Hostname tidak diubah."
     fi
@@ -841,6 +843,7 @@ setup_basic_vps() {
     if [ -n "$timezone" ]; then
         timedatectl set-timezone "$timezone"
         log_info "Timezone diubah menjadi $timezone"
+        echo "$timezone" > /etc/vps_setup_done_timezone
     else
         log_warning "Timezone tidak diubah."
     fi
@@ -849,6 +852,7 @@ setup_basic_vps() {
     if [ -n "$locale" ]; then
         update-locale LANG=$locale
         log_info "Locale diubah menjadi $locale"
+        echo "$locale" > /etc/vps_setup_done_locale
     else
         log_warning "Locale tidak diubah."
     fi
@@ -858,6 +862,7 @@ setup_basic_vps() {
     ufw allow OpenSSH
     ufw --force enable
     log_info "UFW aktif. Port SSH diizinkan."
+    touch /etc/vps_setup_done_ufw
     echo
     log_info "Setup dasar VPS selesai! Sangat disarankan reboot setelah ini."
 } 

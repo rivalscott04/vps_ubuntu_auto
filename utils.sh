@@ -37,4 +37,21 @@ add_ppa_if_needed() {
         add-apt-repository -y ppa:$ppa_name > /dev/null 2>&1
         apt update > /dev/null 2>&1
     fi
+}
+
+# Spinner/progress bar sederhana untuk proses background
+show_progress() {
+    local pid=$!
+    local delay=0.1
+    local spinstr='|/-\\'
+    tput civis 2>/dev/null
+    while ps -p $pid > /dev/null 2>&1; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        spinstr=$temp${spinstr%$temp}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    tput cnorm 2>/dev/null
+    printf "    \b\b\b\b"
 } 
