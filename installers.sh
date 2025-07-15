@@ -547,6 +547,23 @@ install_wordpress() {
     fi
     mkdir -p "$wp_path"
 
+    if [ -d "$wp_path" ] && [ -f "$wp_path/wp-config.php" ]; then
+        echo -e "\e[1;33m[PERINGATAN]\e[0m WordPress sudah terinstall di $wp_path."
+        read -p "Hapus instalasi lama dan reinstall? (y/n): " reinstall_wp
+        if [[ "$reinstall_wp" =~ ^[Yy]$ ]]; then
+            log_info "Menghapus instalasi WordPress lama..."
+            rm -rf "$wp_path"
+            rm -f "/etc/nginx/sites-available/${domain_name}" "/etc/nginx/sites-enabled/${domain_name}"
+            if command -v certbot >/dev/null 2>&1; then
+                certbot delete --cert-name "$domain_name" --non-interactive || log_warning "Gagal hapus sertifikat Let's Encrypt untuk $domain_name."
+            fi
+            log_info "Instalasi lama dihapus. Melanjutkan reinstall..."
+        else
+            log_warning "Instalasi WordPress dibatalkan."
+            return 1
+        fi
+    fi
+
     # Download WordPress
     log_info "Mengunduh WordPress..."
     curl -L https://wordpress.org/latest.zip -o /tmp/wordpress.zip
@@ -604,42 +621,14 @@ server {
     gzip_vary on;
     gzip_min_length 1024;
     gzip_proxied expired no-cache no-store private must-revalidate auth;
-    gzip_types
-        application/atom+xml
-        application/javascript
-        application/json
-        application/rss+xml
-        application/vnd.ms-fontobject
-        application/x-font-ttf
-        application/x-web-app-manifest+json
-        application/xhtml+xml
-        application/xml
-        font/opentype
-        image/svg+xml
-        image/x-icon
-        text/css
-        text/plain
-        text/x-component;
+    gzip_types application/atom+xml application/javascript application/json application/rss+xml application/vnd.ms-fontobject application/x-font-ttf application/x-web-app-manifest+json application/xhtml+xml application/xml font/opentype image/svg+xml image/x-icon text/css text/plain text/x-component;
 
     # Block access to sensitive files
-    location ~* \.(htaccess|htpasswd|ini|log|sh|sql|conf)$ {
-        deny all;
-    }
-
-    # Block access to wp-config.php
-    location ~* wp-config\.php {
-        deny all;
-    }
-
-    # Block access to readme files
-    location ~* ^.*(readme|license|changelog)\.(txt|md)$ {
-        deny all;
-    }
-
-    # Block access to xmlrpc.php (prevent brute force attacks)
-    location = /xmlrpc.php {
-        deny all;
-    }
+    location ~* \.(htaccess|htpasswd|ini|log|sh|sql|conf)$ { deny all; }
+    location ~* wp-config\.php { deny all; }
+    location ~* ^.*(readme|license|changelog)\.(txt|md)$ { deny all; }
+    location = /xmlrpc.php { deny all; }
+    location ~* ^/wp-content/uploads/.*\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ { deny all; }
 
     # WordPress permalinks
     location / {
@@ -652,8 +641,6 @@ server {
         fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
-        
-        # Security for PHP
         fastcgi_hide_header X-Powered-By;
         fastcgi_read_timeout 300;
         fastcgi_buffer_size 128k;
@@ -666,30 +653,6 @@ server {
         expires 1y;
         add_header Cache-Control "public, immutable";
         access_log off;
-    }
-
-    # WordPress uploads directory
-    location ~* ^/wp-content/uploads/.*\.(php|php5|phtml|pl|py|jsp|asp|sh|cgi)$ {
-        deny all;
-    }
-
-    # Deny access to wp-admin for non-logged users
-    location ~* ^/wp-admin/(.*) {
-        location ~ ^/wp-admin/admin-ajax\.php$ {
-            try_files $uri /index.php?$args;
-            include snippets/fastcgi-php.conf;
-            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-            include fastcgi_params;
-        }
-        
-        location ~ ^/wp-admin/(.*) {
-            try_files $uri /index.php?$args;
-            include snippets/fastcgi-php.conf;
-            fastcgi_pass unix:/var/run/php/php${selected_php_version}-fpm.sock;
-            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-            include fastcgi_params;
-        }
     }
 
     # Error and access logs
