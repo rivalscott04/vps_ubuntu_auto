@@ -15,6 +15,7 @@
 - 🔒 **SSL Let's Encrypt Otomatis** — Deteksi domain yang belum HTTPS, aktifkan sekaligus.
 - ⏳ **Progress Bar & Spinner** — Proses install lebih informatif.
 - 🧭 **Ganti Mirror APT** — Pilih mirror negara atau otomatis cari mirror tercepat (netselect).
+- 🖥️ **Info Sistem Modern** — Menu utilitas menampilkan info sistem (CPU, RAM, disk, webserver, dsb) dengan tampilan modern dan interaktif (systeminfo.sh).
 - 🧩 **Cek Ekstensi PHP Terinstall** — Tampilkan semua ekstensi PHP dalam tabel 3 kolom.
 - 🧩 **Struktur Modular** — Mudah di-maintain: `utils.sh`, `installers.sh`, `configurators.sh`.
 
@@ -26,7 +27,7 @@
 *** HARUS! Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall) ***
 ================================================================================
 --- Instalasi Dasar ---           --- Optimasi & Keamanan ---   --- Utilitas ---
-1. Install PHP                    10. Optimasi Server           14. Info Sistem
+1. Install PHP                    10. Optimasi Server           14. Info Sistem (modern)
 2. Install Nginx                  11. Sistem Cache              15. Ganti User MySQL
 3. Install Database               12. Security Hardening        16. Aktifkan SSL
 4. Install phpMyAdmin             13. Sistem Backup             0. Keluar
@@ -58,6 +59,7 @@
    - Pilih menu lain (PHP, Nginx, Database, dsb).
    - Untuk SSL, gunakan menu "Aktifkan SSL untuk Semua Domain" agar semua domain yang belum HTTPS bisa diaktifkan sekaligus.
 5. **Utilitas tambahan:**
+   - **Info Sistem Modern:** Menu utilitas menampilkan info sistem (CPU, RAM, disk, webserver, dsb) dengan tampilan modern dan interaktif (systeminfo.sh).
    - **Cek Ekstensi PHP Terinstall:** Tampilkan semua ekstensi PHP yang aktif dalam tabel 3 kolom, cocok untuk troubleshooting aplikasi PHP.
 
 > **Catatan:** Pengaturan mirror APT sekarang hanya bisa dilakukan dari menu Setup Dasar VPS (akan ditanya otomatis sebelum update/upgrade), tidak tersedia lagi di menu utama/utilitas.

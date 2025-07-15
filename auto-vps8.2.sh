@@ -70,7 +70,7 @@ while true; do
         11) install_cache_system ;;
         12) security_hardening ;;
         13) setup_backup_system ;;
-        14) show_system_info ;;
+        14) bash ./systeminfo.sh ;;
         15) mysql_change_root ;;
         16) offer_ssl_for_all_domains ;;
         18) check_installed_php_extensions ;;

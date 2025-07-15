@@ -836,6 +836,34 @@ offer_ssl_for_all_domains() {
         return
     fi
     log_info "Akan mengaktifkan SSL untuk: ${selected[*]}"
+    # Cek status UFW untuk port 80 dan 443
+    local need_allow=0
+    local ufw_status=""
+    if command -v ufw >/dev/null 2>&1; then
+        ufw_status=$(ufw status | grep -E '80/tcp|443/tcp')
+        if ! echo "$ufw_status" | grep -q '80/tcp.*ALLOW'; then
+            need_allow=1
+        fi
+        if ! echo "$ufw_status" | grep -q '443/tcp.*ALLOW'; then
+            need_allow=1
+        fi
+        if [ $need_allow -eq 1 ]; then
+            echo -e "\e[1;33m[INFO]\e[0m Port 80 dan/atau 443 belum terbuka di firewall (UFW)."
+            echo "1. Buka port 80 & 443 otomatis"
+            echo "2. Batal/atur manual"
+            read -p "Pilih [1-2]: " ufw_opt
+            if [ "$ufw_opt" = "1" ]; then
+                sudo ufw allow 80/tcp
+                sudo ufw allow 443/tcp
+                sudo ufw reload
+                echo -e "\e[1;32m[SUKSES]\e[0m Port 80 & 443 berhasil dibuka di UFW."
+                read -p "Tekan Enter untuk lanjut install SSL..."
+            else
+                log_warning "Batal, silakan atur port firewall manual lalu ulangi proses SSL."
+                return
+            fi
+        fi
+    fi
     # Install certbot & plugin hanya jika belum ada
     if ! command -v certbot >/dev/null 2>&1 || ! dpkg -l | grep -q python3-certbot-nginx; then
         safe_apt_update
