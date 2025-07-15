@@ -25,7 +25,7 @@ while true; do
     [ -f /etc/vps_setup_done_locale ] || { setup_done=0; missing+="Locale, "; }
     [ -f /etc/vps_setup_done_ufw ] || { setup_done=0; missing+="UFW (Firewall), "; }
     if [ $setup_done -eq 0 ]; then
-        echo "\e[1;33m[WAJIB]\e[0m Anda harus menyelesaikan Setup Dasar VPS sebelum menggunakan menu lain."
+        echo -e "\e[1;33m[WAJIB]\e[0m Anda harus menyelesaikan Setup Dasar VPS sebelum menggunakan menu lain."
         echo "Langkah belum selesai: ${missing%, }"
         echo
         echo "99. Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall)"
