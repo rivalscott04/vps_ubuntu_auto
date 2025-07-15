@@ -184,11 +184,6 @@ install_phpmyadmin() {
     # Tanya apakah menggunakan SSL/HTTPS via Cloudflare
     read -p "Apakah menggunakan SSL/HTTPS via Cloudflare? (y/n): " use_ssl
 
-    # Hapus referensi ke weding.domain.com jika ada
-    if [ -f "/etc/nginx/sites-enabled/weding.domain.com" ]; then
-        log_warning "Menghapus referensi ke weding.domain.com..."
-        rm -f "/etc/nginx/sites-enabled/weding.domain.com"
-    fi
 
     # Konfigurasi Nginx
     nginx_conf="/etc/nginx/sites-available/${domain_name}"
@@ -815,9 +810,13 @@ offer_ssl_for_all_domains() {
         return
     fi
     echo "\nDomain yang belum memiliki SSL:"
+    echo "----------------------------------------"
+    echo " No  | Domain"
+    echo "-----+-------------------------------"
     for idx in "${!domains[@]}"; do
-        printf "%2d. %s\n" $((idx+1)) "${domains[$idx]}"
+        printf " %2d  | %s\n" $((idx+1)) "${domains[$idx]}"
     done
+    echo "----------------------------------------"
     echo
     read -p "Masukkan nomor domain yang ingin diaktifkan SSL (pisahkan dengan spasi/koma, atau ketik 'all' untuk semua): " input
     if [[ "$input" == "all" ]]; then
