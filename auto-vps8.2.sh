@@ -46,12 +46,13 @@ while true; do
     printf "%-35s %-35s %-35s\n" "1. Install PHP" "10. Optimasi Server" "14. Tampilkan Informasi Sistem"
     printf "%-35s %-35s %-35s\n" "2. Install Nginx" "11. Instalasi Sistem Cache" "15. Ganti User Root MySQL"
     printf "%-35s %-35s %-35s\n" "3. Install Database" "12. Security Hardening" "16. Aktifkan SSL untuk Semua Domain"
-    printf "%-35s %-35s %-35s\n" "4. Install phpMyAdmin" "13. Sistem Backup" "0. Keluar"
+    printf "%-35s %-35s %-35s\n" "4. Install phpMyAdmin" "13. Sistem Backup" ""
     printf "%-35s %-35s %-35s\n" "5. Install Node.js & npm" "" "17. Ganti Mirror APT Ubuntu"
     printf "%-35s %-35s %-35s\n" "6. Install FrankenPHP" "" "18. Cek Ekstensi PHP Terinstall"
     printf "%-35s %-35s %-35s\n" "7. Install WordPress" "" ""
     printf "%-35s %-35s %-35s\n" "8. Konfigurasi Aplikasi Web" "" ""
     printf "%-35s %-35s %-35s\n" "9. Konfigurasi PHP" "" ""
+    printf "%-105s\n" "0. Keluar"
     echo "=============================="
     read -p "Pilihan [0-16]: " choice
     case $choice in
