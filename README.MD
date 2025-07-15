@@ -30,7 +30,7 @@
 2. Install Nginx                  11. Sistem Cache              15. Ganti User MySQL
 3. Install Database               12. Security Hardening        16. Aktifkan SSL
 4. Install phpMyAdmin             13. Sistem Backup             0. Keluar
-5. Install Node.js & npm                                      17. Ganti Mirror APT Ubuntu
+5. Install Node.js & npm                                      17. Cek Ekstensi PHP Terinstall
 6. Install FrankenPHP                                         18. Cek Ekstensi PHP Terinstall
 7. Install WordPress
 8. Konfigurasi Aplikasi Web
@@ -58,8 +58,9 @@
    - Pilih menu lain (PHP, Nginx, Database, dsb).
    - Untuk SSL, gunakan menu "Aktifkan SSL untuk Semua Domain" agar semua domain yang belum HTTPS bisa diaktifkan sekaligus.
 5. **Utilitas tambahan:**
-   - **Ganti Mirror APT Ubuntu:** Pilih mirror negara (Australia, Singapore, Vietnam) atau otomatis cari mirror tercepat (netselect).
    - **Cek Ekstensi PHP Terinstall:** Tampilkan semua ekstensi PHP yang aktif dalam tabel 3 kolom, cocok untuk troubleshooting aplikasi PHP.
+
+> **Catatan:** Pengaturan mirror APT sekarang hanya bisa dilakukan dari menu Setup Dasar VPS (akan ditanya otomatis sebelum update/upgrade), tidak tersedia lagi di menu utama/utilitas.
 
 ---
 

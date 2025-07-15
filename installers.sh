@@ -841,6 +841,16 @@ offer_ssl_for_all_domains() {
 
 setup_basic_vps() {
     echo
+    # Mirror APT
+    if [ ! -f /etc/vps_setup_done_mirror ]; then
+        read -p "Ingin mengubah mirror APT sebelum setup dasar? (y/n): " change_mirror
+        if [[ "$change_mirror" =~ ^[Yy]$ ]]; then
+            change_apt_mirror
+            touch /etc/vps_setup_done_mirror
+        fi
+    else
+        log_info "Mirror APT sudah pernah diatur, skip."
+    fi
     # Update & Upgrade
     if [ -f /etc/vps_setup_done_update ]; then
         log_info "Update & upgrade sudah dilakukan, skip."
