@@ -38,3 +38,17 @@
 9. Konfigurasi PHP
 ================================================================================
 ```
+
+## Menu Konfigurasi PHP
+
+Menu ini memungkinkan Anda untuk:
+- Mengubah `memory_limit` (dengan validasi input)
+- Mengubah `post_max_size` (dengan validasi input)
+- Mengubah `upload_max_filesize` (dengan validasi input)
+- Mengubah `max_execution_time` (dengan validasi input, hanya angka positif)
+- Mengubah `max_input_time` (dengan validasi input, hanya angka positif)
+- Restart service PHP-FPM
+
+Setiap perubahan akan menampilkan pesan sukses atau error secara interaktif dan berwarna.
+
+Menu ini otomatis mendeteksi semua versi PHP-FPM yang terinstall, dan Anda dapat memilih versi yang ingin dikonfigurasi jika ada lebih dari satu.
