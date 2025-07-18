@@ -1,36 +1,11 @@
 # === Configurators ===
 
 configure_php() {
-    local php_version=$1
-    if [ -z "$php_version" ]; then
-        php_version=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+    if [ ! -f ./php_config_menu.sh ]; then
+        echo "Script konfigurasi PHP (php_config_menu.sh) tidak ditemukan!"
+        return 1
     fi
-    php_ini_file="/etc/php/${php_version}/fpm/php.ini"
-    php_fpm_file="/etc/php/${php_version}/fpm/pool.d/www.conf"
-    if [ ! -f "$php_ini_file" ]; then
-        log_error "File php.ini tidak ditemukan di $php_ini_file"
-        return
-    fi
-    log_info "Mengkonfigurasi PHP $php_version..."
-    cp $php_ini_file "${php_ini_file}.backup"
-    cp $php_fpm_file "${php_fpm_file}.backup"
-    sed -i 's/^memory_limit = .*/memory_limit = 256M/' $php_ini_file
-    sed -i 's/^upload_max_filesize = .*/upload_max_filesize = 64M/' $php_ini_file
-    sed -i 's/^post_max_size = .*/post_max_size = 64M/' $php_ini_file
-    sed -i 's/^max_execution_time = .*/max_execution_time = 300/' $php_ini_file
-    sed -i 's/^max_input_time = .*/max_input_time = 300/' $php_ini_file
-    sed -i 's/^;date.timezone =.*/date.timezone = Asia\/Jakarta/' $php_ini_file
-    sed -i 's/^;emergency_restart_threshold = .*/emergency_restart_threshold = 10/' $php_fpm_file
-    sed -i 's/^;emergency_restart_interval = .*/emergency_restart_interval = 1m/' $php_fpm_file
-    sed -i 's/^;process_control_timeout = .*/process_control_timeout = 10s/' $php_fpm_file
-    sed -i 's/^pm = .*/pm = dynamic/' $php_fpm_file
-    sed -i 's/^pm.max_children = .*/pm.max_children = 50/' $php_fpm_file
-    sed -i 's/^pm.start_servers = .*/pm.start_servers = 5/' $php_fpm_file
-    sed -i 's/^pm.min_spare_servers = .*/pm.min_spare_servers = 5/' $php_fpm_file
-    sed -i 's/^pm.max_spare_servers = .*/pm.max_spare_servers = 35/' $php_fpm_file
-    systemctl restart php${php_version}-fpm
-    log_info "Konfigurasi PHP selesai!"
-    log_info "Backup file tersimpan di ${php_ini_file}.backup dan ${php_fpm_file}.backup"
+    bash ./php_config_menu.sh
 }
 
 # === Webapp Config ===
