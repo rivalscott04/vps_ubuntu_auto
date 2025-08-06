@@ -37,8 +37,84 @@ install_php() {
         log_info "PHP ${selected_php_version} berhasil diinstall!"
         configure_php ${selected_php_version}
         export selected_php_version
+        
+        # Tanya apakah ingin install ImageMagick extension
+        read -p "Ingin menginstall ImageMagick extension untuk PHP? (y/n): " install_imagick
+        if [[ "$install_imagick" =~ ^[Yy]$ ]]; then
+            install_php_imagick ${selected_php_version}
+        fi
     else
         log_error "Gagal menginstal PHP ${selected_php_version}"
+    fi
+}
+
+install_php_imagick() {
+    local php_version="$1"
+    log_info "Menginstall ImageMagick extension untuk PHP ${php_version}..."
+    
+    # Install ImageMagick library dan PHP extension
+    echo "[1/4] Install ImageMagick library..."
+    safe_apt_install imagemagick libmagickwand-dev
+    
+    echo "[2/4] Install PHP ImageMagick extension..."
+    safe_apt_install php${php_version}-imagick
+    
+    echo "[3/4] Konfigurasi ImageMagick..."
+    # Backup konfigurasi ImageMagick yang ada
+    if [ -f /etc/ImageMagick-6/policy.xml ]; then
+        cp /etc/ImageMagick-6/policy.xml /etc/ImageMagick-6/policy.xml.backup
+    elif [ -f /etc/ImageMagick-7/policy.xml ]; then
+        cp /etc/ImageMagick-7/policy.xml /etc/ImageMagick-7/policy.xml.backup
+    fi
+    
+    # Konfigurasi ImageMagick untuk mengizinkan format yang umum digunakan
+    if [ -f /etc/ImageMagick-6/policy.xml ]; then
+        # ImageMagick 6
+        sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
+        sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-6/policy.xml
+        sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-6/policy.xml
+        sed -i 's/rights="none" pattern="XPS"/rights="read|write" pattern="XPS"/' /etc/ImageMagick-6/policy.xml
+        log_info "Konfigurasi ImageMagick 6 berhasil diupdate"
+    elif [ -f /etc/ImageMagick-7/policy.xml ]; then
+        # ImageMagick 7
+        sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-7/policy.xml
+        sed -i 's/rights="none" pattern="PS"/rights="read|write" pattern="PS"/' /etc/ImageMagick-7/policy.xml
+        sed -i 's/rights="none" pattern="EPS"/rights="read|write" pattern="EPS"/' /etc/ImageMagick-7/policy.xml
+        sed -i 's/rights="none" pattern="XPS"/rights="read|write" pattern="XPS"/' /etc/ImageMagick-7/policy.xml
+        log_info "Konfigurasi ImageMagick 7 berhasil diupdate"
+    else
+        log_warning "File policy.xml ImageMagick tidak ditemukan, konfigurasi manual mungkin diperlukan"
+    fi
+    
+    echo "[4/4] Restart PHP-FPM..."
+    systemctl restart php${php_version}-fpm
+    
+    # Test instalasi
+    if php -m | grep -q imagick; then
+        log_info "ImageMagick extension berhasil diinstall dan diaktifkan!"
+        log_info "Versi ImageMagick: $(php -r 'echo Imagick::getVersion()["versionString"];' 2>/dev/null || echo 'Tidak dapat menampilkan versi')"
+        
+        # Tampilkan informasi tambahan
+        echo
+        log_info "INFORMASI IMAGEMAGICK:"
+        echo "1. Extension: php${php_version}-imagick"
+        echo "2. Library: ImageMagick $(convert -version | head -n1 | awk '{print $3}' 2>/dev/null || echo 'Tidak dapat menampilkan versi')"
+        echo "3. Status: Aktif"
+        echo "4. Format yang didukung: JPEG, PNG, GIF, PDF, SVG, dan lainnya"
+        echo
+        log_info "CONTOH PENGGUNAAN PHP:"
+        echo "<?php"
+        echo "if (extension_loaded('imagick')) {"
+        echo "    echo 'ImageMagick extension aktif';"
+        echo "    \$imagick = new Imagick();"
+        echo "    echo 'Versi: ' . Imagick::getVersion()['versionString'];"
+        echo "} else {"
+        echo "    echo 'ImageMagick extension tidak aktif';"
+        echo "}"
+        echo "?>"
+    else
+        log_error "ImageMagick extension gagal diinstall atau tidak aktif"
+        log_info "Coba restart PHP-FPM manual: sudo systemctl restart php${php_version}-fpm"
     fi
 }
 
