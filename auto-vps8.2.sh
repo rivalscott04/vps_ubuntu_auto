@@ -54,10 +54,11 @@ while true; do
     printf "│ %-37s │ %-37s │ %-37s │\n" "7. Install WordPress" "" ""
     printf "│ %-37s │ %-37s │ %-37s │\n" "8. Konfigurasi Aplikasi Web" "" ""
     printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi PHP" "" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "18. Install & Setup SSO" "" ""
     echo "├───────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────┤"
     printf "│ %-111s │\n" "0. Keluar"
     echo "└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-    read -p "Pilihan [0-17]: " choice
+    read -p "Pilihan [0-18]: " choice
     case $choice in
         99) setup_basic_vps ;;
         1) install_php ;;
@@ -77,6 +78,7 @@ while true; do
         15) offer_ssl_for_all_domains ;;
         16) configure_nodejs_systemd ;;
         17) hapus_ssl_for_domains ;;
+        18) install_sso ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
         *) log_error "Pilihan tidak valid" ;;

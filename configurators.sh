@@ -323,3 +323,89 @@ EOF
     echo "Cek status: sudo systemctl status $service_name"
     echo "Lihat log: tail -f $app_path/app.log"
 } 
+
+# === Konfigurasi Nginx untuk SSO ===
+configure_sso_nginx() {
+    log_info "=== Konfigurasi Nginx untuk SSO (Keycloak) ==="
+    
+    # Cek apakah nginx sudah terinstall
+    if ! command -v nginx &> /dev/null; then
+        log_error "Nginx belum terinstall. Install Nginx terlebih dahulu."
+        return 1
+    fi
+    
+    echo "Pilih jenis konfigurasi:"
+    echo "1. Domain utama (misal: sso.domain.com)"
+    echo "2. Subdomain (misal: auth.domain.com)"
+    read -p "Pilihan [1-2]: " domain_type
+    
+    if [ "$domain_type" = "2" ]; then
+        read -p "Masukkan domain utama (misal: domain.com): " main_domain
+        read -p "Masukkan subdomain (misal: auth): " subdomain
+        subdomain=${subdomain:-auth}
+        domain_name="${subdomain}.${main_domain}"
+    else
+        read -p "Masukkan domain untuk SSO (misal: sso.domain.com): " domain_name
+    fi
+    
+    # Buat konfigurasi nginx
+    nginx_conf="/etc/nginx/sites-available/${domain_name}"
+    
+    log_info "Membuat konfigurasi Nginx untuk $domain_name..."
+    
+    cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    
+    # Proxy ke Keycloak yang berjalan di port 8080
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        # Timeout settings untuk Keycloak
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+    
+    # Tambahan untuk WebSocket support (jika diperlukan)
+    location /realms/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+    }
+}
+EOF
+    
+    # Aktifkan site
+    ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+    
+    # Test konfigurasi nginx
+    if nginx -t; then
+        systemctl reload nginx
+        log_info "Konfigurasi Nginx untuk SSO berhasil dibuat dan diaktifkan!"
+        echo
+        log_info "=== INFORMASI KONFIGURASI ==="
+        echo "1. Domain: $domain_name"
+        echo "2. Konfigurasi: $nginx_conf"
+        echo "3. Akses: http://$domain_name"
+        echo "4. Admin Console: http://$domain_name/admin"
+        echo
+        log_info "Pastikan DNS sudah mengarah ke server ini!"
+    else
+        log_error "Konfigurasi Nginx tidak valid!"
+        rm -f "/etc/nginx/sites-enabled/${domain_name}"
+        return 1
+    fi
+} 

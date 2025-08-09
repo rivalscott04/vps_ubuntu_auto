@@ -1048,3 +1048,164 @@ setup_basic_vps() {
     echo
     log_info "Setup dasar VPS selesai! Sangat disarankan reboot setelah ini."
 } 
+
+# === SSO Installer ===
+install_sso() {
+    log_info "=== Install & Setup SSO (Keycloak) ==="
+    
+    # Cek apakah Java sudah terinstall
+    if ! command -v java &> /dev/null; then
+        log_info "Java belum terinstall. Menginstall OpenJDK 17..."
+        safe_apt_update
+        safe_apt_install openjdk-17-jdk -y
+        if [ $? -ne 0 ]; then
+            log_error "Gagal menginstall Java. Pastikan repository tersedia."
+            return 1
+        fi
+        log_info "Java berhasil diinstall."
+    else
+        log_info "Java sudah terinstall: $(java -version 2>&1 | head -n 1)"
+    fi
+    
+    # Buat direktori untuk Keycloak
+    KEYCLOAK_DIR="/opt/keycloak"
+    if [ -d "$KEYCLOAK_DIR" ]; then
+        log_warning "Direktori $KEYCLOAK_DIR sudah ada. Menghapus instalasi lama..."
+        rm -rf "$KEYCLOAK_DIR"
+    fi
+    
+    # Download Keycloak
+    log_info "Mendownload Keycloak..."
+    cd /tmp
+    KEYCLOAK_VERSION="24.0.2"
+    wget "https://github.com/keycloak/keycloak/releases/download/$KEYCLOAK_VERSION/keycloak-$KEYCLOAK_VERSION.tar.gz" -O keycloak.tar.gz
+    
+    if [ $? -ne 0 ]; then
+        log_error "Gagal mendownload Keycloak."
+        return 1
+    fi
+    
+    # Extract dan setup
+    log_info "Mengekstrak Keycloak..."
+    tar -xzf keycloak.tar.gz
+    mv keycloak-$KEYCLOAK_VERSION $KEYCLOAK_DIR
+    chown -R root:root $KEYCLOAK_DIR
+    chmod +x $KEYCLOAK_DIR/bin/kc.sh
+    
+    # Setup interaktif
+    log_info "Setup konfigurasi Keycloak..."
+    echo "=== Setup Konfigurasi Keycloak ==="
+    echo "Pilih jenis setup:"
+    echo "1. Development mode (H2 database, port 8080)"
+    echo "2. Production mode (dengan konfigurasi lengkap)"
+    read -p "Pilihan [1-2]: " setup_mode
+    
+    case $setup_mode in
+        1)
+            # Development mode
+            log_info "Setup development mode..."
+            cd $KEYCLOAK_DIR/bin
+            
+            # Buat admin user
+            read -p "Masukkan username admin: " admin_user
+            admin_user=${admin_user:-admin}
+            read -p "Masukkan password admin: " admin_pass
+            admin_pass=${admin_pass:-admin123}
+            
+            # Setup admin user
+            ./kc.sh config admin --user $admin_user --password $admin_pass
+            
+            # Buat service file
+            cat > /etc/systemd/system/keycloak.service <<EOF
+[Unit]
+Description=Keycloak Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$KEYCLOAK_DIR/bin
+ExecStart=$KEYCLOAK_DIR/bin/kc.sh start-dev
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ;;
+        2)
+            # Production mode
+            log_info "Setup production mode..."
+            cd $KEYCLOAK_DIR/bin
+            
+            # Input konfigurasi
+            read -p "Masukkan domain untuk Keycloak (misal: sso.domain.com): " keycloak_domain
+            read -p "Masukkan username admin: " admin_user
+            admin_user=${admin_user:-admin}
+            read -p "Masukkan password admin: " admin_pass
+            admin_pass=${admin_pass:-admin123}
+            
+            # Setup admin user
+            ./kc.sh config admin --user $admin_user --password $admin_pass
+            
+            # Setup hostname
+            ./kc.sh config hostname --hostname $keycloak_domain
+            
+            # Buat service file untuk production
+            cat > /etc/systemd/system/keycloak.service <<EOF
+[Unit]
+Description=Keycloak Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$KEYCLOAK_DIR/bin
+ExecStart=$KEYCLOAK_DIR/bin/kc.sh start --hostname $keycloak_domain
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ;;
+        *)
+            log_error "Pilihan tidak valid!"
+            return 1
+            ;;
+    esac
+    
+    # Enable dan start service
+    log_info "Mengaktifkan service Keycloak..."
+    systemctl daemon-reload
+    systemctl enable keycloak
+    systemctl start keycloak
+    
+    if [ $? -eq 0 ]; then
+        log_info "Keycloak berhasil diinstall dan dijalankan!"
+        log_info "Service status: $(systemctl is-active keycloak)"
+        
+        # Setup nginx jika diminta
+        echo
+        read -p "Ingin setup Nginx reverse proxy untuk Keycloak? (y/n): " setup_nginx
+        if [[ "$setup_nginx" =~ ^[Yy]$ ]]; then
+            configure_sso_nginx
+        fi
+        
+        echo
+        log_info "=== INFORMASI KEYCLOAK ==="
+        echo "1. Service: systemctl status keycloak"
+        echo "2. Log: journalctl -u keycloak -f"
+        echo "3. Admin Console: http://localhost:8080"
+        if [ "$setup_mode" = "2" ] && [ -n "$keycloak_domain" ]; then
+            echo "4. Admin Console: http://$keycloak_domain"
+        fi
+        echo "5. Username: $admin_user"
+        echo "6. Password: $admin_pass"
+        echo
+        log_info "Keycloak siap digunakan!"
+    else
+        log_error "Gagal menjalankan service Keycloak."
+        return 1
+    fi
+} 
