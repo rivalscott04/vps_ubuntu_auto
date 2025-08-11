@@ -14,34 +14,9 @@ fi
 while true; do
     clear
     echo "=============================="
-    echo "*** HARUS! Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall) ***"
+    echo "*** Menu Utama VPS Auto Setup ***"
     echo "=============================="
-    # Cek status setup dasar VPS
-    setup_done=1
-    missing=""
-    [ -f /etc/vps_setup_done_update ] || { setup_done=0; missing+="Update & Upgrade, "; }
-    [ -f /etc/vps_setup_done_hostname ] || { setup_done=0; missing+="Hostname, "; }
-    [ -f /etc/vps_setup_done_timezone ] || { setup_done=0; missing+="Timezone, "; }
-    [ -f /etc/vps_setup_done_locale ] || { setup_done=0; missing+="Locale, "; }
-    [ -f /etc/vps_setup_done_ufw ] || { setup_done=0; missing+="UFW (Firewall), "; }
-    if [ $setup_done -eq 0 ]; then
-        echo -e "\e[1;33m[WAJIB]\e[0m Anda harus menyelesaikan Setup Dasar VPS sebelum menggunakan menu lain."
-        echo "Langkah belum selesai: ${missing%, }"
-        echo
-        echo "99. Setup Dasar VPS (Update, Hostname, Timezone, Locale, Firewall)"
-        echo "0. Keluar"
-        echo "=============================="
-        read -p "Pilihan [99/0]: " choice
-        case $choice in
-            99) setup_basic_vps ;;
-            0) log_info "Terima kasih telah menggunakan script ini!"; exit 0 ;;
-            *) log_error "Pilihan tidak valid. Selesaikan Setup Dasar VPS terlebih dahulu!" ;;
-        esac
-        echo
-        read -p "Tekan Enter untuk melanjutkan..."
-        continue
-    fi
-    # Jika setup dasar sudah selesai, tampilkan menu lengkap dalam tabel penuh
+    # Tampilkan menu lengkap dalam tabel penuh
     echo "┌───────────────────────────────────────────────┬───────────────────────────────────────────────┬───────────────────────────────────────────────┐"
     printf "│ %-37s │ %-37s │ %-37s │\n" "--- Instalasi Dasar ---" "--- Optimasi & Keamanan ---" "--- Utilitas ---"
     echo "├───────────────────────────────────────────────┼───────────────────────────────────────────────┼───────────────────────────────────────────────┤"
