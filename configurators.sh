@@ -131,6 +131,208 @@ EOF
     echo "Akses: http://$domain_name"
 }
 
+configure_webapp_path_based() {
+    echo "=== Konfigurasi Web App dengan Path-Based Routing ==="
+    echo "Contoh: domain.com/app1, domain.com/app2, domain.com/admin"
+    echo
+    read -p "Masukkan domain utama (misal: domain.com): " main_domain
+    
+    # Array untuk menyimpan konfigurasi aplikasi
+    declare -a apps_config
+    apps_count=0
+    
+    while true; do
+        echo
+        echo "=== Aplikasi ke-$((apps_count + 1)) ==="
+        read -p "Masukkan nama path aplikasi (misal: app1, admin, api): " app_path_name
+        
+        if [[ -z "$app_path_name" ]]; then
+            log_error "Nama path aplikasi tidak boleh kosong!"
+            continue
+        fi
+        
+        echo "Pilih jenis aplikasi web:"
+        echo "1. PHP Biasa"
+        echo "2. Laravel"
+        echo "3. Node.js/Express"
+        echo "4. React/Vite (static, folder dist)"
+        read -p "Pilihan [1-4]: " app_type
+        
+        read -p "Masukkan path root aplikasi (misal: /var/www/$app_path_name): " app_root
+        app_root=${app_root:-/var/www/$app_path_name}
+        
+        # Simpan konfigurasi aplikasi
+        case $app_type in
+            1) app_type_name="php" ;;
+            2) app_type_name="laravel" ;;
+            3) 
+                read -p "Masukkan port aplikasi Node.js (misal: 3000): " node_port
+                app_type_name="nodejs:$node_port"
+                ;;
+            4) app_type_name="react" ;;
+            *) log_error "Pilihan tidak valid!"; continue ;;
+        esac
+        
+        apps_config[$apps_count]="$app_path_name:$app_type_name:$app_root"
+        apps_count=$((apps_count + 1))
+        
+        read -p "Tambah aplikasi lain? (y/n): " add_more
+        if [[ ! "$add_more" =~ ^[Yy]$ ]]; then
+            break
+        fi
+    done
+    
+    if [ $apps_count -eq 0 ]; then
+        log_error "Tidak ada aplikasi yang dikonfigurasi!"
+        return
+    fi
+    
+    # Buat konfigurasi Nginx
+    nginx_conf="/etc/nginx/sites-available/${main_domain}-pathbased"
+    
+    cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${main_domain};
+    
+    # Default location untuk root domain
+    location = / {
+        return 200 'Path-based routing aktif untuk ${main_domain}';
+        add_header Content-Type text/plain;
+    }
+    
+EOF
+    
+    # Tambahkan konfigurasi untuk setiap aplikasi
+    for i in "${!apps_config[@]}"; do
+        IFS=':' read -ra ADDR <<< "${apps_config[$i]}"
+        path_name="${ADDR[0]}"
+        app_type="${ADDR[1]}"
+        app_root="${ADDR[2]}"
+        
+        echo "    # Konfigurasi untuk /$path_name" >> "$nginx_conf"
+        
+        case $app_type in
+            "php")
+                cat >> "$nginx_conf" <<EOF
+    location /$path_name {
+        alias $app_root;
+        index index.php index.html index.htm;
+        try_files \$uri \$uri/ @php_$path_name;
+    }
+    
+    location @php_$path_name {
+        rewrite ^/$path_name/(.*)$ /$path_name/index.php last;
+    }
+    
+    location ~ ^/$path_name/(.+\.php)$ {
+        alias $app_root;
+        try_files /\$1 =404;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $app_root/\$1;
+        include fastcgi_params;
+    }
+    
+EOF
+                ;;
+            "laravel")
+                cat >> "$nginx_conf" <<EOF
+    location /$path_name {
+        alias $app_root/public;
+        index index.php;
+        try_files \$uri \$uri/ @laravel_$path_name;
+    }
+    
+    location @laravel_$path_name {
+        rewrite ^/$path_name/(.*)$ /$path_name/index.php?\$1;
+    }
+    
+    location ~ ^/$path_name/(.+\.php)$ {
+        alias $app_root/public;
+        try_files /\$1 =404;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $app_root/public/\$1;
+        include fastcgi_params;
+    }
+    
+EOF
+                ;;
+            nodejs:*)
+                node_port="${app_type#nodejs:}"
+                cat >> "$nginx_conf" <<EOF
+    location /$path_name {
+        proxy_pass http://127.0.0.1:${node_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+EOF
+                ;;
+            "react")
+                cat >> "$nginx_conf" <<EOF
+    location /$path_name {
+        alias $app_root/dist;
+        index index.html;
+        try_files \$uri \$uri/ /$path_name/index.html;
+    }
+    
+    location ~* ^/$path_name/.*\.(?:css|js|woff2?|ttf|eot|ico|svg|jpg|jpeg|gif|png|webp)$ {
+        alias $app_root/dist;
+        expires 1y;
+        access_log off;
+    }
+    
+EOF
+                ;;
+        esac
+    done
+    
+    # Tutup konfigurasi server
+    cat >> "$nginx_conf" <<EOF
+    # Block access to sensitive files
+    location ~* \.ht {
+        deny all;
+    }
+}
+EOF
+    
+    # Aktifkan konfigurasi
+    ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
+    
+    # Test konfigurasi nginx
+    if nginx -t; then
+        systemctl reload nginx
+        log_info "Konfigurasi Nginx path-based untuk $main_domain berhasil dibuat!"
+        echo
+        echo "=== Ringkasan Konfigurasi ==="
+        echo "Domain: $main_domain"
+        echo "File konfigurasi: $nginx_conf"
+        echo
+        echo "Aplikasi yang dikonfigurasi:"
+        for i in "${!apps_config[@]}"; do
+            IFS=':' read -ra ADDR <<< "${apps_config[$i]}"
+            path_name="${ADDR[0]}"
+            app_type="${ADDR[1]}"
+            app_root="${ADDR[2]}"
+            echo "  - http://$main_domain/$path_name -> $app_root (${app_type})"
+        done
+        echo
+        echo "Pastikan semua aplikasi sudah diletakkan di path yang benar!"
+    else
+        log_error "Konfigurasi Nginx tidak valid! Periksa syntax error."
+        rm -f "/etc/nginx/sites-enabled/$(basename "$nginx_conf")"
+        return 1
+    fi
+}
+
 # === Optimasi Server ===
 optimize_server() {
     log_info "Mengoptimalkan server..."
