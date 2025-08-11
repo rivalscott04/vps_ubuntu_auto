@@ -333,6 +333,223 @@ EOF
     fi
 }
 
+configure_cronjob() {
+    echo "=== Setting Cron Job ==="
+    echo "Pilih jenis cron job yang ingin dikonfigurasi:"
+    echo "1. Backup Database Otomatis"
+    echo "2. Bersihkan File Temporary"
+    echo "3. Bersihkan Cache Laravel & Node.js"
+    echo "4. Setup Semua Cron Job"
+    echo "0. Kembali"
+    read -p "Pilihan [0-4]: " cronjob_choice
+    
+    case $cronjob_choice in
+        1) setup_database_backup_cronjob ;;
+        2) setup_temp_cleanup_cronjob ;;
+        3) setup_cache_cleanup_cronjob ;;
+        4) 
+            setup_database_backup_cronjob
+            setup_temp_cleanup_cronjob
+            setup_cache_cleanup_cronjob
+            log_info "Semua cron job berhasil dikonfigurasi!"
+            ;;
+        0) return ;;
+        *) log_error "Pilihan tidak valid!" ;;
+    esac
+}
+
+setup_database_backup_cronjob() {
+    log_info "Mengkonfigurasi cron job untuk backup database..."
+    
+    # Pilihan jadwal backup
+    echo "Pilih jadwal backup database:"
+    echo "1. Harian (setiap hari jam 2:00 pagi)"
+    echo "2. Mingguan (setiap minggu hari Minggu jam 2:00 pagi)"
+    echo "3. Bulanan (setiap tanggal 1 jam 2:00 pagi)"
+    read -p "Pilihan [1-3]: " backup_schedule
+    
+    case $backup_schedule in
+        1) 
+            cron_schedule="0 2 * * *"
+            schedule_desc="harian (setiap hari jam 2:00 pagi)"
+            retention_days=7
+            ;;
+        2) 
+            cron_schedule="0 2 * * 0"
+            schedule_desc="mingguan (setiap Minggu jam 2:00 pagi)"
+            retention_days=30
+            ;;
+        3) 
+            cron_schedule="0 2 1 * *"
+            schedule_desc="bulanan (setiap tanggal 1 jam 2:00 pagi)"
+            retention_days=365
+            ;;
+        *) 
+            log_warning "Pilihan tidak valid, menggunakan default (harian)"
+            cron_schedule="0 2 * * *"
+            schedule_desc="harian (setiap hari jam 2:00 pagi)"
+            retention_days=7
+            ;;
+    esac
+    
+    # Buat direktori backup jika belum ada
+    mkdir -p /var/backups/database
+    
+    # Buat script backup database dengan retention yang dinamis
+    cat > /usr/local/bin/backup-database.sh << EOF
+#!/bin/bash
+# Script backup database otomatis
+BACKUP_DIR="/var/backups/database"
+DATE=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="/var/log/database-backup.log"
+
+echo "$(date): Memulai backup database..." >> $LOG_FILE
+
+# Backup MySQL/MariaDB
+if systemctl is-active --quiet mysql || systemctl is-active --quiet mariadb; then
+    echo "$(date): Backup MySQL/MariaDB..." >> $LOG_FILE
+    mysqldump --all-databases --single-transaction --routines --triggers > "$BACKUP_DIR/mysql_backup_$DATE.sql"
+    gzip "$BACKUP_DIR/mysql_backup_$DATE.sql"
+    echo "$(date): MySQL/MariaDB backup selesai" >> $LOG_FILE
+fi
+
+# Backup PostgreSQL
+if systemctl is-active --quiet postgresql; then
+    echo "$(date): Backup PostgreSQL..." >> $LOG_FILE
+    sudo -u postgres pg_dumpall > "$BACKUP_DIR/postgres_backup_$DATE.sql"
+    gzip "$BACKUP_DIR/postgres_backup_$DATE.sql"
+    echo "$(date): PostgreSQL backup selesai" >> $LOG_FILE
+fi
+
+# Hapus backup lama berdasarkan retention policy
+find \$BACKUP_DIR -name "*.sql.gz" -type f -mtime +${retention_days} -delete
+echo "\$(date): Backup database selesai dan file lama dibersihkan" >> \$LOG_FILE
+EOF
+
+    chmod +x /usr/local/bin/backup-database.sh
+    
+    # Hapus cron job backup database yang mungkin sudah ada
+    crontab -l 2>/dev/null | grep -v "backup-database.sh" | crontab -
+    
+    # Setup cron job baru dengan jadwal yang dipilih
+    (crontab -l 2>/dev/null; echo "$cron_schedule /usr/local/bin/backup-database.sh") | crontab -
+    
+    log_info "Cron job backup database berhasil dikonfigurasi!"
+    echo "  - Backup akan berjalan $schedule_desc"
+    echo "  - File backup disimpan di: /var/backups/database"
+    echo "  - Log backup di: /var/log/database-backup.log"
+    echo "  - Backup lama (>$retention_days hari) akan dihapus otomatis"
+}
+
+setup_temp_cleanup_cronjob() {
+    log_info "Mengkonfigurasi cron job untuk pembersihan file temporary..."
+    
+    # Buat script pembersihan temp
+    cat > /usr/local/bin/cleanup-temp.sh << 'EOF'
+#!/bin/bash
+# Script pembersihan file temporary
+LOG_FILE="/var/log/temp-cleanup.log"
+
+echo "$(date): Memulai pembersihan file temporary..." >> $LOG_FILE
+
+# Bersihkan /tmp (file lebih dari 3 hari)
+find /tmp -type f -mtime +3 -delete 2>/dev/null
+find /tmp -type d -empty -delete 2>/dev/null
+
+# Bersihkan /var/tmp (file lebih dari 7 hari)
+find /var/tmp -type f -mtime +7 -delete 2>/dev/null
+find /var/tmp -type d -empty -delete 2>/dev/null
+
+# Bersihkan log lama
+find /var/log -name "*.log.*" -type f -mtime +14 -delete 2>/dev/null
+find /var/log -name "*.gz" -type f -mtime +14 -delete 2>/dev/null
+
+# Bersihkan APT cache
+apt-get clean 2>/dev/null
+
+# Bersihkan package yang tidak diperlukan
+apt-get autoremove -y 2>/dev/null
+
+echo "$(date): Pembersihan file temporary selesai" >> $LOG_FILE
+EOF
+
+    chmod +x /usr/local/bin/cleanup-temp.sh
+    
+    # Setup cron job (setiap hari jam 3 pagi)
+    (crontab -l 2>/dev/null; echo "0 3 * * * /usr/local/bin/cleanup-temp.sh") | crontab -
+    
+    log_info "Cron job pembersihan file temporary berhasil dikonfigurasi!"
+    echo "  - Pembersihan akan berjalan setiap hari jam 3:00 pagi"
+    echo "  - Membersihkan /tmp (file >3 hari), /var/tmp (file >7 hari)"
+    echo "  - Membersihkan log lama (>14 hari) dan APT cache"
+    echo "  - Log pembersihan di: /var/log/temp-cleanup.log"
+}
+
+setup_cache_cleanup_cronjob() {
+    log_info "Mengkonfigurasi cron job untuk pembersihan cache Laravel & Node.js..."
+    
+    # Buat script pembersihan cache
+    cat > /usr/local/bin/cleanup-cache.sh << 'EOF'
+#!/bin/bash
+# Script pembersihan cache Laravel dan Node.js
+LOG_FILE="/var/log/cache-cleanup.log"
+
+echo "$(date): Memulai pembersihan cache..." >> $LOG_FILE
+
+# Cari dan bersihkan cache Laravel
+find /var/www -name "bootstrap" -type d 2>/dev/null | while read bootstrap_dir; do
+    if [ -d "$bootstrap_dir/cache" ]; then
+        echo "$(date): Membersihkan Laravel cache di $bootstrap_dir/cache" >> $LOG_FILE
+        find "$bootstrap_dir/cache" -name "*.php" -type f -mtime +1 -delete 2>/dev/null
+    fi
+done
+
+# Cari dan bersihkan storage/framework/cache Laravel
+find /var/www -path "*/storage/framework/cache" -type d 2>/dev/null | while read cache_dir; do
+    echo "$(date): Membersihkan Laravel storage cache di $cache_dir" >> $LOG_FILE
+    find "$cache_dir" -type f -mtime +1 -delete 2>/dev/null
+done
+
+# Cari dan bersihkan storage/logs Laravel (file log lama)
+find /var/www -path "*/storage/logs" -type d 2>/dev/null | while read logs_dir; do
+    echo "$(date): Membersihkan Laravel logs di $logs_dir" >> $LOG_FILE
+    find "$logs_dir" -name "*.log" -type f -mtime +7 -delete 2>/dev/null
+done
+
+# Bersihkan Node.js cache (npm cache)
+if command -v npm >/dev/null 2>&1; then
+    echo "$(date): Membersihkan npm cache" >> $LOG_FILE
+    npm cache clean --force 2>/dev/null
+fi
+
+# Bersihkan yarn cache jika ada
+if command -v yarn >/dev/null 2>&1; then
+    echo "$(date): Membersihkan yarn cache" >> $LOG_FILE
+    yarn cache clean 2>/dev/null
+fi
+
+# Cari dan bersihkan node_modules/.cache
+find /var/www -path "*/node_modules/.cache" -type d 2>/dev/null | while read cache_dir; do
+    echo "$(date): Membersihkan Node.js cache di $cache_dir" >> $LOG_FILE
+    rm -rf "$cache_dir"/* 2>/dev/null
+done
+
+echo "$(date): Pembersihan cache selesai" >> $LOG_FILE
+EOF
+
+    chmod +x /usr/local/bin/cleanup-cache.sh
+    
+    # Setup cron job (setiap hari jam 4 pagi)
+    (crontab -l 2>/dev/null; echo "0 4 * * * /usr/local/bin/cleanup-cache.sh") | crontab -
+    
+    log_info "Cron job pembersihan cache berhasil dikonfigurasi!"
+    echo "  - Pembersihan akan berjalan setiap hari jam 4:00 pagi"
+    echo "  - Membersihkan cache Laravel (bootstrap, storage/framework)"
+    echo "  - Membersihkan log Laravel lama (>7 hari)"
+    echo "  - Membersihkan npm/yarn cache dan node_modules/.cache"
+    echo "  - Log pembersihan di: /var/log/cache-cleanup.log"
+}
+
 # === Optimasi Server ===
 optimize_server() {
     log_info "Mengoptimalkan server..."
