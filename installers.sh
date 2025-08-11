@@ -6,7 +6,15 @@ add_php_repository() {
 }
 
 install_php() {
-    add_php_repository
+    # Cek apakah PPA ondrej/php sudah ditambahkan
+    if ls /etc/apt/sources.list.d/ondrej-ubuntu-php*.list 1> /dev/null 2>&1; then
+        log_info "PPA ondrej/php sudah tersedia, langsung ke pilihan versi PHP..."
+    else
+        log_info "PPA ondrej/php belum tersedia, menginstall secara otomatis..."
+        add_php_repository
+        log_info "PPA ondrej/php berhasil ditambahkan!"
+    fi
+    
     echo "Pilih versi PHP yang ingin diinstall:"
     echo "1. PHP 8.4 (jika tersedia)"
     echo "2. PHP 8.3"
