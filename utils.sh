@@ -75,7 +75,7 @@ safe_apt_update() {
                 3) return 1;;
                 *) echo "Pilihan tidak valid, ulangi.";;
             esac
-        elif grep -q "E: "; then
+        elif grep -q "E: " /tmp/aptlog; then
             echo -e "\e[1;31m[ERROR]\e[0m apt-get update gagal:"
             grep "E: " /tmp/aptlog
             return 1
