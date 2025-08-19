@@ -30,6 +30,7 @@ configure_webapp() {
         read -p "Masukkan domain (misal: domain.com): " domain_name
     fi
     read -p "Masukkan path root aplikasi (misal: /var/www/app): " app_path
+    
     case $app_type in
         1)
             # PHP Biasa
@@ -134,8 +135,46 @@ EOF
 configure_webapp_path_based() {
     echo "=== Konfigurasi Web App dengan Path-Based Routing ==="
     echo "Contoh: domain.com/app1, domain.com/app2, domain.com/admin"
+    echo "        atau: 192.168.1.100/app1, 192.168.1.100/app2"
     echo
-    read -p "Masukkan domain utama (misal: domain.com): " main_domain
+    echo "Pilih jenis konfigurasi:"
+    echo "1. Menggunakan domain (misal: domain.com)"
+    echo "2. Menggunakan IP address (misal: 192.168.1.100)"
+    read -p "Pilihan [1-2]: " server_type
+    
+    case $server_type in
+        1)
+            read -p "Masukkan domain utama (misal: domain.com): " main_server
+            ;;
+        2)
+            while true; do
+                read -p "Masukkan IP address (misal: 192.168.1.100): " main_server
+                # Validasi format IP address
+                if [[ $main_server =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                    # Validasi range IP (0-255)
+                    valid_ip=true
+                    IFS='.' read -ra IP_PARTS <<< "$main_server"
+                    for part in "${IP_PARTS[@]}"; do
+                        if [ "$part" -gt 255 ] || [ "$part" -lt 0 ]; then
+                            valid_ip=false
+                            break
+                        fi
+                    done
+                    if [ "$valid_ip" = true ]; then
+                        break
+                    else
+                        echo "Error: IP address tidak valid (range 0-255 untuk setiap oktet)"
+                    fi
+                else
+                    echo "Error: Format IP address tidak valid. Gunakan format seperti 192.168.1.100"
+                fi
+            done
+            ;;
+        *)
+            log_error "Pilihan tidak valid!"
+            return
+            ;;
+    esac
     
     # Array untuk menyimpan konfigurasi aplikasi
     declare -a apps_config
@@ -188,16 +227,18 @@ configure_webapp_path_based() {
     fi
     
     # Buat konfigurasi Nginx
-    nginx_conf="/etc/nginx/sites-available/${main_domain}-pathbased"
+    # Buat nama file yang aman untuk IP address (ganti titik dengan underscore)
+    safe_name=$(echo "$main_server" | sed 's/\./_/g')
+    nginx_conf="/etc/nginx/sites-available/${safe_name}-pathbased"
     
     cat > "$nginx_conf" <<EOF
 server {
     listen 80;
-    server_name ${main_domain};
+    server_name ${main_server};
     
-    # Default location untuk root domain
+    # Default location untuk root domain/IP
     location = / {
-        return 200 'Path-based routing aktif untuk ${main_domain}';
+        return 200 'Path-based routing aktif untuk ${main_server}';
         add_header Content-Type text/plain;
     }
     
@@ -310,10 +351,14 @@ EOF
     # Test konfigurasi nginx
     if nginx -t; then
         systemctl reload nginx
-        log_info "Konfigurasi Nginx path-based untuk $main_domain berhasil dibuat!"
+        log_info "Konfigurasi Nginx path-based untuk $main_server berhasil dibuat!"
         echo
         echo "=== Ringkasan Konfigurasi ==="
-        echo "Domain: $main_domain"
+        if [ "$server_type" = "1" ]; then
+            echo "Domain: $main_server"
+        else
+            echo "IP Address: $main_server"
+        fi
         echo "File konfigurasi: $nginx_conf"
         echo
         echo "Aplikasi yang dikonfigurasi:"
@@ -322,7 +367,7 @@ EOF
             path_name="${ADDR[0]}"
             app_type="${ADDR[1]}"
             app_root="${ADDR[2]}"
-            echo "  - http://$main_domain/$path_name -> $app_root (${app_type})"
+            echo "  - http://$main_server/$path_name -> $app_root (${app_type})"
         done
         echo
         echo "Pastikan semua aplikasi sudah diletakkan di path yang benar!"
