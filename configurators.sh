@@ -244,27 +244,30 @@ server {
     
 EOF
     
-    # Debug: tampilkan semua aplikasi yang akan diproses
-    echo "DEBUG: Total applications to process: ${#apps_config[@]}" >&2
-    for idx in "${!apps_config[@]}"; do
-        echo "DEBUG: apps_config[$idx] = '${apps_config[$idx]}'" >&2
-    done
+
     
     # Tambahkan konfigurasi untuk setiap aplikasi
     for i in "${!apps_config[@]}"; do
-        IFS=':' read -ra ADDR <<< "${apps_config[$i]}"
-        path_name="${ADDR[0]}"
-        app_type="${ADDR[1]}"
-        app_root="${ADDR[2]}"
+        # Parsing string dengan format: path_name:app_type:app_root
+        # Khusus untuk nodejs format: path_name:nodejs:port:app_root
+        config_str="${apps_config[$i]}"
+        path_name=$(echo "$config_str" | cut -d':' -f1)
+        
+        # Deteksi jika ini nodejs (ada port)
+        if [[ "$config_str" =~ ^[^:]+:nodejs:[0-9]+: ]]; then
+            # Format: path_name:nodejs:port:app_root
+            app_type=$(echo "$config_str" | cut -d':' -f2-3)  # nodejs:port
+            app_root=$(echo "$config_str" | cut -d':' -f4-)   # sisa setelah 3 colon pertama
+        else
+            # Format normal: path_name:app_type:app_root
+            app_type=$(echo "$config_str" | cut -d':' -f2)
+            app_root=$(echo "$config_str" | cut -d':' -f3-)
+        fi
         
         echo "    # Konfigurasi untuk /$path_name" >> "$nginx_conf"
         
-        # Debug logging
-        echo "DEBUG: Processing app $i: path_name=$path_name, app_type=$app_type, app_root=$app_root" >&2
-        
         case $app_type in
             "php")
-                echo "DEBUG: Generating PHP config for $path_name" >&2
                 cat >> "$nginx_conf" <<EOF
     location /$path_name {
         alias $app_root;
@@ -288,7 +291,6 @@ EOF
 EOF
                 ;;
             "laravel")
-                echo "DEBUG: Generating Laravel config for $path_name" >&2
                 cat >> "$nginx_conf" <<EOF
     location /$path_name {
         alias $app_root/public;
@@ -313,16 +315,6 @@ EOF
                 ;;
             nodejs:*)
                 node_port="${app_type#nodejs:}"
-                echo "DEBUG: Generating Node.js config for $path_name on port $node_port" >&2
-                
-                # Validasi port number
-                if ! [[ "$node_port" =~ ^[0-9]+$ ]]; then
-                    echo "ERROR: Port tidak valid: $node_port" >&2
-                    log_error "Port aplikasi Node.js tidak valid: $node_port"
-                    continue
-                fi
-                
-                echo "DEBUG: About to write Node.js location block for /$path_name" >&2
                 cat >> "$nginx_conf" <<EOF
     location /$path_name {
         proxy_pass http://127.0.0.1:${node_port};
@@ -337,10 +329,8 @@ EOF
     }
     
 EOF
-                echo "DEBUG: Successfully wrote Node.js location block for /$path_name" >&2
                 ;;
             "react")
-                echo "DEBUG: Generating React config for $path_name" >&2
                 cat >> "$nginx_conf" <<EOF
     location /$path_name {
         alias $app_root/dist;
@@ -357,7 +347,6 @@ EOF
 EOF
                 ;;
             *)
-                echo "DEBUG: Unknown app_type '$app_type' for $path_name - SKIPPING!" >&2
                 log_error "Jenis aplikasi tidak dikenali: $app_type untuk path /$path_name"
                 ;;
         esac
@@ -371,9 +360,6 @@ EOF
     }
 }
 EOF
-    
-    echo "DEBUG: Finished writing nginx config to $nginx_conf" >&2
-    echo "DEBUG: Config file size: $(wc -l < "$nginx_conf") lines" >&2
     
     # Aktifkan konfigurasi
     ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
