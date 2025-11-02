@@ -908,10 +908,21 @@ EOF
             fi
             
             read -p "Masukkan nama service systemd (misal: nextjs-app): " service_name
-            read -p "Masukkan port aplikasi Next.js (default: 3000): " nextjs_port
-            nextjs_port=${nextjs_port:-3000}
             read -p "Jalankan sebagai user apa? (default: www-data): " run_user
             run_user=${run_user:-www-data}
+            
+            # Cek apakah port sudah ada di package.json script atau perlu di-set
+            if grep -q '"start".*"next start -p' "$app_path/package.json" 2>/dev/null; then
+                log_info "Port sudah dikonfigurasi di package.json script, tidak perlu set PORT di environment"
+                use_port_env=false
+            else
+                read -p "Masukkan port aplikasi Next.js (default: 3000, kosongkan jika sudah ada di package.json): " nextjs_port
+                if [ -n "$nextjs_port" ]; then
+                    use_port_env=true
+                else
+                    use_port_env=false
+                fi
+            fi
             
             # Cek apakah npm tersedia
             if ! command -v npm >/dev/null 2>&1; then
@@ -921,25 +932,46 @@ EOF
             
             npm_path=$(which npm)
             service_file="/etc/systemd/system/${service_name}.service"
-            cat > "$service_file" <<EOF
+            
+            # Buat file service dengan format sesuai kebutuhan
+            if [ "$use_port_env" = true ]; then
+                cat > "$service_file" <<EOF
 [Unit]
-Description=Next.js App ($service_name)
+Description=Next.js $service_name
 After=network.target
 
 [Service]
 Type=simple
+User=$run_user
 WorkingDirectory=$app_path
 ExecStart=$npm_path start
 Restart=always
-User=$run_user
+RestartSec=10
 Environment=NODE_ENV=production
-Environment=PORT=$nextjs_port
-StandardOutput=append:$app_path/app.log
-StandardError=append:$app_path/app.log
+Environment=PORT=${nextjs_port}
 
 [Install]
 WantedBy=multi-user.target
 EOF
+            else
+                cat > "$service_file" <<EOF
+[Unit]
+Description=Next.js $service_name
+After=network.target
+
+[Service]
+Type=simple
+User=$run_user
+WorkingDirectory=$app_path
+ExecStart=$npm_path start
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            fi
             log_info "Pastikan aplikasi Next.js sudah di-build (npm run build) sebelum menjalankan service!"
             ;;
         *)
