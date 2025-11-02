@@ -16,7 +16,8 @@ configure_webapp() {
     echo "2. Laravel"
     echo "3. Node.js/Express"
     echo "4. React/Vite (static, folder dist)"
-    read -p "Pilihan [1-4]: " app_type
+    echo "5. Next.js"
+    read -p "Pilihan [1-5]: " app_type
     echo "Apakah ingin menggunakan domain utama atau subdomain?"
     echo "1. Domain utama (misal: domain.com)"
     echo "2. Subdomain (misal: app.domain.com)"
@@ -121,6 +122,46 @@ server {
 }
 EOF
             ;;
+        5)
+            # Next.js (reverse proxy)
+            read -p "Masukkan port aplikasi Next.js (misal: 3000): " nextjs_port
+            nginx_conf="/etc/nginx/sites-available/${domain_name}"
+            cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+
+    location / {
+        proxy_pass http://127.0.0.1:${nextjs_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        # Timeout settings untuk Next.js
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Buffer settings
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+    
+    # Cache untuk static assets Next.js
+    location /_next/static {
+        proxy_pass http://127.0.0.1:${nextjs_port};
+        proxy_http_version 1.1;
+        proxy_cache_valid 200 60m;
+        add_header Cache-Control "public, immutable";
+    }
+}
+EOF
+            ;;
         *)
             log_error "Pilihan tidak valid!"
             return
@@ -195,7 +236,8 @@ configure_webapp_path_based() {
         echo "2. Laravel"
         echo "3. Node.js/Express"
         echo "4. React/Vite (static, folder dist)"
-        read -p "Pilihan [1-4]: " app_type
+        echo "5. Next.js"
+        read -p "Pilihan [1-5]: " app_type
         
         read -p "Masukkan path root aplikasi (misal: /var/www/$app_path_name): " app_root
         app_root=${app_root:-/var/www/$app_path_name}
@@ -209,6 +251,10 @@ configure_webapp_path_based() {
                 app_type_name="nodejs:$node_port"
                 ;;
             4) app_type_name="react" ;;
+            5) 
+                read -p "Masukkan port aplikasi Next.js (misal: 3000): " nextjs_port
+                app_type_name="nextjs:$nextjs_port"
+                ;;
             *) log_error "Pilihan tidak valid!"; continue ;;
         esac
         
@@ -249,14 +295,14 @@ EOF
     # Tambahkan konfigurasi untuk setiap aplikasi
     for i in "${!apps_config[@]}"; do
         # Parsing string dengan format: path_name:app_type:app_root
-        # Khusus untuk nodejs format: path_name:nodejs:port:app_root
+        # Khusus untuk nodejs/nextjs format: path_name:app_type:port:app_root
         config_str="${apps_config[$i]}"
         path_name=$(echo "$config_str" | cut -d':' -f1)
         
-        # Deteksi jika ini nodejs (ada port)
-        if [[ "$config_str" =~ ^[^:]+:nodejs:[0-9]+: ]]; then
-            # Format: path_name:nodejs:port:app_root
-            app_type=$(echo "$config_str" | cut -d':' -f2-3)  # nodejs:port
+        # Deteksi jika ini nodejs atau nextjs (ada port)
+        if [[ "$config_str" =~ ^[^:]+:(nodejs|nextjs):[0-9]+: ]]; then
+            # Format: path_name:app_type:port:app_root
+            app_type=$(echo "$config_str" | cut -d':' -f2-3)  # nodejs:port atau nextjs:port
             app_root=$(echo "$config_str" | cut -d':' -f4-)   # sisa setelah 3 colon pertama
         else
             # Format normal: path_name:app_type:app_root
@@ -326,6 +372,40 @@ EOF
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+    
+EOF
+                ;;
+            nextjs:*)
+                nextjs_port="${app_type#nextjs:}"
+                cat >> "$nginx_conf" <<EOF
+    location /$path_name {
+        proxy_pass http://127.0.0.1:${nextjs_port};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        # Timeout settings untuk Next.js
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # Buffer settings
+        proxy_buffering off;
+        proxy_request_buffering off;
+    }
+    
+    # Cache untuk static assets Next.js
+    location /$path_name/_next/static {
+        proxy_pass http://127.0.0.1:${nextjs_port};
+        proxy_http_version 1.1;
+        proxy_cache_valid 200 60m;
+        add_header Cache-Control "public, immutable";
     }
     
 EOF
