@@ -846,19 +846,35 @@ check_installed_php_extensions() {
 
 # === Konfigurasi systemd untuk Node.js ===
 configure_nodejs_systemd() {
-    echo "=== Konfigurasi systemd untuk Node.js ==="
-    read -p "Masukkan path aplikasi Node.js (misal: /var/www/api_pegawai): " app_path
-    if [ ! -d "$app_path" ]; then
-        log_error "Path $app_path tidak ditemukan!"
-        return
-    fi
-    read -p "Masukkan nama service systemd (misal: api-pegawai): " service_name
-    read -p "Masukkan nama file entry point (default: server.js): " entry_point
-    entry_point=${entry_point:-server.js}
-    read -p "Jalankan sebagai user apa? (default: www-data): " run_user
-    run_user=${run_user:-www-data}
-    service_file="/etc/systemd/system/${service_name}.service"
-    cat > "$service_file" <<EOF
+    echo "=== Konfigurasi systemd untuk Node.js/Next.js ==="
+    echo "Pilih jenis aplikasi:"
+    echo "1. Node.js/Express (biasa)"
+    echo "2. Next.js"
+    read -p "Pilihan [1-2]: " app_type
+    
+    case $app_type in
+        1)
+            # Node.js biasa
+            read -p "Masukkan path aplikasi Node.js (misal: /var/www/api_pegawai): " app_path
+            if [ ! -d "$app_path" ]; then
+                log_error "Path $app_path tidak ditemukan!"
+                return
+            fi
+            read -p "Masukkan nama service systemd (misal: api-pegawai): " service_name
+            read -p "Masukkan nama file entry point (default: server.js): " entry_point
+            entry_point=${entry_point:-server.js}
+            read -p "Jalankan sebagai user apa? (default: www-data): " run_user
+            run_user=${run_user:-www-data}
+            
+            # Cek apakah node tersedia
+            if ! command -v node >/dev/null 2>&1; then
+                log_error "Node.js tidak ditemukan! Install Node.js terlebih dahulu."
+                return 1
+            fi
+            
+            node_path=$(which node)
+            service_file="/etc/systemd/system/${service_name}.service"
+            cat > "$service_file" <<EOF
 [Unit]
 Description=Node.js App ($service_name)
 After=network.target
@@ -866,7 +882,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$app_path
-ExecStart=/usr/bin/node $entry_point
+ExecStart=$node_path $entry_point
 Restart=always
 User=$run_user
 Environment=NODE_ENV=production
@@ -876,6 +892,62 @@ StandardError=append:$app_path/app.log
 [Install]
 WantedBy=multi-user.target
 EOF
+            ;;
+        2)
+            # Next.js
+            read -p "Masukkan path aplikasi Next.js (misal: /var/www/nextjs-app): " app_path
+            if [ ! -d "$app_path" ]; then
+                log_error "Path $app_path tidak ditemukan!"
+                return
+            fi
+            
+            # Cek apakah package.json ada
+            if [ ! -f "$app_path/package.json" ]; then
+                log_error "File package.json tidak ditemukan di $app_path"
+                return 1
+            fi
+            
+            read -p "Masukkan nama service systemd (misal: nextjs-app): " service_name
+            read -p "Masukkan port aplikasi Next.js (default: 3000): " nextjs_port
+            nextjs_port=${nextjs_port:-3000}
+            read -p "Jalankan sebagai user apa? (default: www-data): " run_user
+            run_user=${run_user:-www-data}
+            
+            # Cek apakah npm tersedia
+            if ! command -v npm >/dev/null 2>&1; then
+                log_error "npm tidak ditemukan! Install Node.js dan npm terlebih dahulu."
+                return 1
+            fi
+            
+            npm_path=$(which npm)
+            service_file="/etc/systemd/system/${service_name}.service"
+            cat > "$service_file" <<EOF
+[Unit]
+Description=Next.js App ($service_name)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$app_path
+ExecStart=$npm_path start
+Restart=always
+User=$run_user
+Environment=NODE_ENV=production
+Environment=PORT=$nextjs_port
+StandardOutput=append:$app_path/app.log
+StandardError=append:$app_path/app.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            log_info "Pastikan aplikasi Next.js sudah di-build (npm run build) sebelum menjalankan service!"
+            ;;
+        *)
+            log_error "Pilihan tidak valid!"
+            return
+            ;;
+    esac
+    
     systemctl daemon-reload
     systemctl enable "$service_name"
     systemctl restart "$service_name"
