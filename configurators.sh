@@ -17,7 +17,8 @@ configure_webapp() {
     echo "3. Node.js/Express"
     echo "4. React/Vite (static, folder dist)"
     echo "5. Next.js"
-    read -p "Pilihan [1-5]: " app_type
+    echo "6. Svelte (static, folder build)"
+    read -p "Pilihan [1-6]: " app_type
     echo "Apakah ingin menggunakan domain utama atau subdomain?"
     echo "1. Domain utama (misal: domain.com)"
     echo "2. Subdomain (misal: app.domain.com)"
@@ -162,6 +163,29 @@ server {
 }
 EOF
             ;;
+        6)
+            # Svelte (static, folder build)
+            nginx_conf="/etc/nginx/sites-available/${domain_name}"
+            cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name ${domain_name};
+    root ${app_path}/build;
+    index index.html;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+    location ~* \.(?:manifest|appcache|html?|xml|json)$ {
+        expires -1;
+    }
+    location ~* \.(?:css|js|woff2?|ttf|eot|ico|svg|jpg|jpeg|gif|png|webp)$ {
+        expires 1y;
+        access_log off;
+    }
+}
+EOF
+            ;;
         *)
             log_error "Pilihan tidak valid!"
             return
@@ -237,7 +261,8 @@ configure_webapp_path_based() {
         echo "3. Node.js/Express"
         echo "4. React/Vite (static, folder dist)"
         echo "5. Next.js"
-        read -p "Pilihan [1-5]: " app_type
+        echo "6. Svelte (static, folder build)"
+        read -p "Pilihan [1-6]: " app_type
         
         read -p "Masukkan path root aplikasi (misal: /var/www/$app_path_name): " app_root
         app_root=${app_root:-/var/www/$app_path_name}
@@ -255,6 +280,7 @@ configure_webapp_path_based() {
                 read -p "Masukkan port aplikasi Next.js (misal: 3000): " nextjs_port
                 app_type_name="nextjs:$nextjs_port"
                 ;;
+            6) app_type_name="svelte" ;;
             *) log_error "Pilihan tidak valid!"; continue ;;
         esac
         
@@ -424,6 +450,22 @@ EOF
         access_log off;
     }
     
+EOF
+                ;;
+            "svelte")
+                cat >> "$nginx_conf" <<EOF
+    location /$path_name {
+        alias $app_root/build;
+        index index.html;
+        try_files \$uri \$uri/ /$path_name/index.html;
+    }
+
+    location ~* ^/$path_name/.*\.(?:css|js|woff2?|ttf|eot|ico|svg|jpg|jpeg|gif|png|webp)$ {
+        alias $app_root/build;
+        expires 1y;
+        access_log off;
+    }
+
 EOF
                 ;;
             *)
