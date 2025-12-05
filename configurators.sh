@@ -79,6 +79,29 @@ server {
     location ~* \.ht { deny all; }
 }
 EOF
+            # Fix permissions untuk Laravel
+            log_info "Memperbaiki permission untuk aplikasi Laravel..."
+            if [ -d "$app_path/storage" ]; then
+                chown -R www-data:www-data "$app_path/storage" "$app_path/bootstrap/cache" 2>/dev/null
+                chmod -R 775 "$app_path/storage" 2>/dev/null
+                chmod -R 775 "$app_path/bootstrap/cache" 2>/dev/null
+                log_info "Permission untuk storage dan bootstrap/cache telah diperbaiki"
+            else
+                log_warning "Folder storage tidak ditemukan di $app_path, pastikan aplikasi Laravel sudah terinstall"
+            fi
+            
+            # Create storage link
+            if [ -f "$app_path/artisan" ]; then
+                log_info "Membuat storage link..."
+                cd "$app_path" && php artisan storage:link 2>/dev/null
+                if [ $? -eq 0 ]; then
+                    log_info "Storage link berhasil dibuat"
+                else
+                    log_warning "Gagal membuat storage link, mungkin sudah ada atau ada masalah"
+                fi
+            else
+                log_warning "File artisan tidak ditemukan di $app_path"
+            fi
             ;;
         3)
             # Node.js/Express (reverse proxy)
@@ -483,6 +506,45 @@ EOF
     }
 }
 EOF
+    
+    # Fix permissions untuk semua aplikasi Laravel
+    log_info "Memperbaiki permission untuk aplikasi Laravel..."
+    for i in "${!apps_config[@]}"; do
+        config_str="${apps_config[$i]}"
+        path_name=$(echo "$config_str" | cut -d':' -f1)
+        
+        # Deteksi jika ini nodejs atau nextjs (ada port)
+        if [[ "$config_str" =~ ^[^:]+:(nodejs|nextjs):[0-9]+: ]]; then
+            app_type=$(echo "$config_str" | cut -d':' -f2-3)
+            app_root=$(echo "$config_str" | cut -d':' -f4-)
+        else
+            app_type=$(echo "$config_str" | cut -d':' -f2)
+            app_root=$(echo "$config_str" | cut -d':' -f3-)
+        fi
+        
+        # Jika ini aplikasi Laravel, fix permissions
+        if [ "$app_type" = "laravel" ]; then
+            if [ -d "$app_root/storage" ]; then
+                chown -R www-data:www-data "$app_root/storage" "$app_root/bootstrap/cache" 2>/dev/null
+                chmod -R 775 "$app_root/storage" 2>/dev/null
+                chmod -R 775 "$app_root/bootstrap/cache" 2>/dev/null
+                log_info "Permission untuk $app_root telah diperbaiki"
+            else
+                log_warning "Folder storage tidak ditemukan di $app_root"
+            fi
+            
+            # Create storage link
+            if [ -f "$app_root/artisan" ]; then
+                log_info "Membuat storage link untuk $app_root..."
+                cd "$app_root" && php artisan storage:link 2>/dev/null
+                if [ $? -eq 0 ]; then
+                    log_info "Storage link untuk $app_root berhasil dibuat"
+                else
+                    log_warning "Gagal membuat storage link untuk $app_root, mungkin sudah ada atau ada masalah"
+                fi
+            fi
+        fi
+    done
     
     # Aktifkan konfigurasi
     ln -sf "$nginx_conf" "/etc/nginx/sites-enabled/"
