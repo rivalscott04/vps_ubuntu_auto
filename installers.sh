@@ -1058,6 +1058,219 @@ setup_basic_vps() {
 } 
 
 # === SSO Installer ===
+install_python() {
+    log_info "Mempersiapkan instalasi Python..."
+    
+    echo "Pilih versi Python yang ingin diinstall:"
+    echo "1. Python 3.13 (latest)"
+    echo "2. Python 3.12"
+    echo "3. Python 3.11"
+    echo "4. Python 3.10"
+    echo "5. Python 3.9"
+    echo "6. Python 3.8"
+    echo "7. Python 3 (default dari repository)"
+    read -p "Pilihan [1-7]: " python_choice
+    
+    case $python_choice in
+        1) python_version="3.13" ;;
+        2) python_version="3.12" ;;
+        3) python_version="3.11" ;;
+        4) python_version="3.10" ;;
+        5) python_version="3.9" ;;
+        6) python_version="3.8" ;;
+        7) python_version="3" ;;
+        *) log_warning "Pilihan tidak valid, menggunakan default Python 3"; python_version="3" ;;
+    esac
+    
+    # Update repository
+    echo "[1/3] Update repository..."
+    safe_apt_update
+    
+    # Install Python dan dependencies
+    echo "[2/3] Install Python ${python_version} dan dependencies..."
+    if [ "$python_version" = "3" ]; then
+        safe_apt_install python3 python3-pip python3-venv python3-dev build-essential -y
+    else
+        # Untuk versi spesifik, install dari deadsnakes PPA
+        if [ ! -f /etc/apt/sources.list.d/deadsnakes.list ]; then
+            log_info "Menambahkan repository deadsnakes PPA untuk Python ${python_version}..."
+            add_ppa_if_needed "deadsnakes/ppa"
+            safe_apt_update
+        fi
+        
+        safe_apt_install python${python_version} python${python_version}-venv python${python_version}-dev python3-pip build-essential -y
+        
+        # Buat symlink untuk python3 dan pip3 jika belum ada
+        if [ ! -f /usr/bin/python3 ]; then
+            ln -s /usr/bin/python${python_version} /usr/bin/python3
+        fi
+    fi
+    
+    # Install pip jika belum ada
+    echo "[3/3] Setup pip..."
+    if ! command -v pip3 &> /dev/null; then
+        if [ "$python_version" != "3" ]; then
+            # Download get-pip.py untuk versi spesifik
+            curl https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+            python${python_version} /tmp/get-pip.py
+            rm /tmp/get-pip.py
+        fi
+    else
+        # Update pip ke versi terbaru
+        pip3 install --upgrade pip
+    fi
+    
+    # Verifikasi instalasi
+    if command -v python3 &> /dev/null; then
+        installed_version=$(python3 --version 2>&1)
+        pip_version=$(pip3 --version 2>&1)
+        log_info "Python berhasil diinstall!"
+        log_info "Versi Python: $installed_version"
+        log_info "Versi pip: $pip_version"
+        
+        # Tampilkan lokasi Python
+        python_path=$(which python3)
+        log_info "Lokasi Python: $python_path"
+        
+        # Tanya apakah ingin install package umum
+        echo
+        read -p "Ingin menginstall package Python umum (numpy, requests, flask, django)? (y/n): " install_common
+        if [[ "$install_common" =~ ^[Yy]$ ]]; then
+            log_info "Menginstall package umum..."
+            pip3 install numpy requests flask django
+            log_info "Package umum berhasil diinstall!"
+        fi
+    else
+        log_error "Gagal menginstal Python"
+        return 1
+    fi
+}
+
+setup_venv() {
+    log_info "=== Setup Virtual Environment (venv) ==="
+    
+    # Cek apakah Python sudah terinstall
+    if ! command -v python3 &> /dev/null; then
+        log_error "Python belum terinstall. Silakan install Python terlebih dahulu."
+        read -p "Ingin install Python sekarang? (y/n): " install_now
+        if [[ "$install_now" =~ ^[Yy]$ ]]; then
+            install_python
+        else
+            return 1
+        fi
+    fi
+    
+    # Pilih versi Python untuk venv
+    echo "Pilih versi Python untuk virtual environment:"
+    echo "1. Gunakan Python default (python3)"
+    
+    # Deteksi versi Python yang tersedia
+    available_versions=()
+    for version in "3.13" "3.12" "3.11" "3.10" "3.9" "3.8"; do
+        if command -v python${version} &> /dev/null; then
+            available_versions+=("$version")
+            echo "$((${#available_versions[@]}+1)). Python ${version}"
+        fi
+    done
+    
+    read -p "Pilihan [1-$((${#available_versions[@]}+1))]: " python_venv_choice
+    
+    if [ "$python_venv_choice" = "1" ]; then
+        python_cmd="python3"
+    else
+        selected_idx=$(($python_venv_choice - 2))
+        if [ $selected_idx -ge 0 ] && [ $selected_idx -lt ${#available_versions[@]} ]; then
+            python_cmd="python${available_versions[$selected_idx]}"
+        else
+            log_warning "Pilihan tidak valid, menggunakan Python default"
+            python_cmd="python3"
+        fi
+    fi
+    
+    # Input lokasi venv
+    read -p "Masukkan path untuk virtual environment (contoh: /var/www/myapp/venv atau ./venv): " venv_path
+    
+    if [ -z "$venv_path" ]; then
+        log_error "Path tidak boleh kosong!"
+        return 1
+    fi
+    
+    # Konversi path relatif ke absolut jika perlu
+    if [[ ! "$venv_path" =~ ^/ ]]; then
+        venv_path="$(pwd)/$venv_path"
+    fi
+    
+    # Cek apakah venv sudah ada
+    if [ -d "$venv_path" ]; then
+        log_warning "Virtual environment sudah ada di $venv_path"
+        read -p "Hapus dan buat ulang? (y/n): " recreate_venv
+        if [[ "$recreate_venv" =~ ^[Yy]$ ]]; then
+            rm -rf "$venv_path"
+            log_info "Virtual environment lama dihapus"
+        else
+            log_info "Menggunakan virtual environment yang sudah ada"
+            log_info "Untuk mengaktifkan: source $venv_path/bin/activate"
+            return 0
+        fi
+    fi
+    
+    # Buat direktori parent jika belum ada
+    venv_parent=$(dirname "$venv_path")
+    if [ ! -d "$venv_parent" ]; then
+        mkdir -p "$venv_parent"
+        log_info "Direktori $venv_parent dibuat"
+    fi
+    
+    # Buat virtual environment
+    log_info "Membuat virtual environment di $venv_path menggunakan $python_cmd..."
+    $python_cmd -m venv "$venv_path"
+    
+    if [ $? -eq 0 ]; then
+        log_info "Virtual environment berhasil dibuat!"
+        log_info "Lokasi: $venv_path"
+        
+        # Tampilkan cara penggunaan
+        echo
+        log_info "=== CARA PENGGUNAAN ==="
+        echo "1. Aktifkan virtual environment:"
+        echo "   source $venv_path/bin/activate"
+        echo
+        echo "2. Install package:"
+        echo "   pip install <package_name>"
+        echo
+        echo "3. Deactivate virtual environment:"
+        echo "   deactivate"
+        echo
+        
+        # Tanya apakah ingin install package sekarang
+        read -p "Ingin install package sekarang? (y/n): " install_packages
+        if [[ "$install_packages" =~ ^[Yy]$ ]]; then
+            read -p "Masukkan nama package (pisahkan dengan spasi, contoh: flask django requests): " packages
+            if [ -n "$packages" ]; then
+                log_info "Menginstall package: $packages"
+                "$venv_path/bin/pip" install $packages
+                log_info "Package berhasil diinstall!"
+            fi
+        fi
+        
+        # Tanya apakah ingin install requirements.txt
+        read -p "Apakah ada file requirements.txt yang ingin diinstall? (y/n): " install_requirements
+        if [[ "$install_requirements" =~ ^[Yy]$ ]]; then
+            read -p "Masukkan path ke file requirements.txt: " requirements_path
+            if [ -f "$requirements_path" ]; then
+                log_info "Menginstall dari requirements.txt..."
+                "$venv_path/bin/pip" install -r "$requirements_path"
+                log_info "Requirements berhasil diinstall!"
+            else
+                log_error "File requirements.txt tidak ditemukan di $requirements_path"
+            fi
+        fi
+    else
+        log_error "Gagal membuat virtual environment"
+        return 1
+    fi
+}
+
 install_sso() {
     log_info "=== Install & Setup SSO (Keycloak) ==="
     

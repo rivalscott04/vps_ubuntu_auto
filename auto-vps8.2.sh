@@ -26,14 +26,14 @@ while true; do
     printf "│ %-37s │ %-37s │ %-37s │\n" "4. Instal phpMyAdmin" "14. Sistem Backup" "19. Konfigurasi systemd Node.js"
     printf "│ %-37s │ %-37s │ %-37s │\n" "5. Instal Node.js & npm" "15. Setup Dasar VPS" "20. Konfigurasi PHP"
     printf "│ %-37s │ %-37s │ %-37s │\n" "6. Instal FrankenPHP" "" "21. Setting Cron Job"
-    printf "│ %-37s │ %-37s │ %-37s │\n" "7. Instal WordPress" "" ""
-    printf "│ %-37s │ %-37s │ %-37s │\n" "8. Instal & Setup SSO" "" ""
-    printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi Aplikasi Web" "" ""
+    printf "│ %-37s │ %-37s │ %-37s │\n" "7. Instal WordPress" "" "22. Instal Python"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "8. Instal & Setup SSO" "" "23. Setup Virtual Environment (venv)"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi Aplikasi Web" "" "24. Konfigurasi systemd Python"
     printf "│ %-37s │ %-37s │ %-37s │\n" "10. Konfigurasi Routing Berbasis Path" "" ""
     echo "├───────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────┤"
     printf "│ %-111s │\n" "0. Keluar"
     echo "└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-    read -p "Pilihan [0-21]: " choice
+    read -p "Pilihan [0-24]: " choice
     case $choice in
         1) install_php ;;
         2) install_webserver ;;
@@ -56,6 +56,9 @@ while true; do
         19) configure_nodejs_systemd ;;
         20) configure_php ;;
         21) configure_cronjob ;;
+        22) install_python ;;
+        23) setup_venv ;;
+        24) configure_python_systemd ;;
         99) setup_basic_vps ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;

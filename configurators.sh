@@ -1093,6 +1093,329 @@ EOF
     echo "Lihat log: tail -f $app_path/app.log"
 } 
 
+# === Konfigurasi systemd untuk Python ===
+configure_python_systemd() {
+    echo "=== Konfigurasi systemd untuk Aplikasi Python ==="
+    echo "Pilih jenis aplikasi:"
+    echo "1. Script Python biasa (.py)"
+    echo "2. Flask/FastAPI (dengan gunicorn)"
+    echo "3. Django (dengan gunicorn)"
+    read -p "Pilihan [1-3]: " app_type
+    
+    case $app_type in
+        1)
+            # Script Python biasa
+            read -p "Masukkan path lengkap file Python (misal: /var/www/myapp/main.py): " python_file
+            if [ ! -f "$python_file" ]; then
+                log_error "File $python_file tidak ditemukan!"
+                return 1
+            fi
+            
+            app_path=$(dirname "$python_file")
+            file_name=$(basename "$python_file")
+            
+            read -p "Masukkan nama service systemd (misal: myapp): " service_name
+            read -p "Jalankan sebagai user apa? (default: www-data): " run_user
+            run_user=${run_user:-www-data}
+            
+            # Tanya apakah pakai virtual environment
+            read -p "Apakah menggunakan virtual environment? (y/n): " use_venv
+            if [[ "$use_venv" =~ ^[Yy]$ ]]; then
+                read -p "Masukkan path ke virtual environment (misal: /var/www/myapp/venv): " venv_path
+                if [ ! -d "$venv_path" ]; then
+                    log_error "Virtual environment tidak ditemukan di $venv_path!"
+                    return 1
+                fi
+                python_exec="$venv_path/bin/python"
+            else
+                # Deteksi Python yang tersedia
+                echo "Pilih versi Python:"
+                echo "1. python3 (default)"
+                available_versions=()
+                idx=2
+                for version in "3.13" "3.12" "3.11" "3.10" "3.9" "3.8"; do
+                    if command -v python${version} &> /dev/null; then
+                        available_versions+=("$version")
+                        echo "$idx. python${version}"
+                        ((idx++))
+                    fi
+                done
+                read -p "Pilihan [1-$((idx-1))]: " python_choice
+                
+                if [ "$python_choice" = "1" ]; then
+                    python_exec=$(which python3)
+                else
+                    selected_idx=$((python_choice - 2))
+                    if [ $selected_idx -ge 0 ] && [ $selected_idx -lt ${#available_versions[@]} ]; then
+                        python_exec=$(which python${available_versions[$selected_idx]})
+                    else
+                        python_exec=$(which python3)
+                    fi
+                fi
+            fi
+            
+            # Tanya tentang environment variables
+            read -p "Tambahkan environment variables? (y/n): " add_env
+            env_vars=""
+            if [[ "$add_env" =~ ^[Yy]$ ]]; then
+                echo "Masukkan environment variables (format: KEY=value), ketik 'done' untuk selesai:"
+                while true; do
+                    read -p "ENV: " env_input
+                    if [ "$env_input" = "done" ]; then
+                        break
+                    fi
+                    env_vars="${env_vars}Environment=$env_input\n"
+                done
+            fi
+            
+            service_file="/etc/systemd/system/${service_name}.service"
+            cat > "$service_file" <<EOF
+[Unit]
+Description=Python App ($service_name)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$app_path
+ExecStart=$python_exec $file_name
+Restart=always
+RestartSec=10
+User=$run_user
+$(echo -e "$env_vars")
+StandardOutput=append:$app_path/${service_name}.log
+StandardError=append:$app_path/${service_name}.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            ;;
+        2)
+            # Flask/FastAPI dengan gunicorn
+            read -p "Masukkan path aplikasi (misal: /var/www/myapi): " app_path
+            if [ ! -d "$app_path" ]; then
+                log_error "Path $app_path tidak ditemukan!"
+                return 1
+            fi
+            
+            read -p "Masukkan nama service systemd (misal: myapi): " service_name
+            read -p "Masukkan module:app (misal: main:app atau app:app): " wsgi_app
+            wsgi_app=${wsgi_app:-main:app}
+            read -p "Masukkan port (default: 8000): " app_port
+            app_port=${app_port:-8000}
+            read -p "Masukkan jumlah workers (default: 4): " workers
+            workers=${workers:-4}
+            read -p "Jalankan sebagai user apa? (default: www-data): " run_user
+            run_user=${run_user:-www-data}
+            
+            # Tanya apakah pakai virtual environment
+            read -p "Apakah menggunakan virtual environment? (y/n): " use_venv
+            if [[ "$use_venv" =~ ^[Yy]$ ]]; then
+                read -p "Masukkan path ke virtual environment (misal: /var/www/myapi/venv): " venv_path
+                if [ ! -d "$venv_path" ]; then
+                    log_error "Virtual environment tidak ditemukan di $venv_path!"
+                    return 1
+                fi
+                gunicorn_exec="$venv_path/bin/gunicorn"
+                # Cek apakah gunicorn sudah terinstall di venv
+                if [ ! -f "$gunicorn_exec" ]; then
+                    log_warning "Gunicorn belum terinstall di virtual environment"
+                    read -p "Install gunicorn sekarang? (y/n): " install_gunicorn
+                    if [[ "$install_gunicorn" =~ ^[Yy]$ ]]; then
+                        "$venv_path/bin/pip" install gunicorn
+                    else
+                        log_error "Gunicorn diperlukan untuk menjalankan aplikasi!"
+                        return 1
+                    fi
+                fi
+            else
+                # Cek apakah gunicorn tersedia secara global
+                if ! command -v gunicorn &> /dev/null; then
+                    log_warning "Gunicorn belum terinstall secara global"
+                    read -p "Install gunicorn sekarang? (y/n): " install_gunicorn
+                    if [[ "$install_gunicorn" =~ ^[Yy]$ ]]; then
+                        pip3 install gunicorn
+                    else
+                        log_error "Gunicorn diperlukan untuk menjalankan aplikasi!"
+                        return 1
+                    fi
+                fi
+                gunicorn_exec=$(which gunicorn)
+            fi
+            
+            # Tanya tentang environment variables
+            read -p "Tambahkan environment variables? (y/n): " add_env
+            env_vars=""
+            if [[ "$add_env" =~ ^[Yy]$ ]]; then
+                echo "Masukkan environment variables (format: KEY=value), ketik 'done' untuk selesai:"
+                while true; do
+                    read -p "ENV: " env_input
+                    if [ "$env_input" = "done" ]; then
+                        break
+                    fi
+                    env_vars="${env_vars}Environment=$env_input\n"
+                done
+            fi
+            
+            service_file="/etc/systemd/system/${service_name}.service"
+            cat > "$service_file" <<EOF
+[Unit]
+Description=Gunicorn instance for $service_name
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$app_path
+ExecStart=$gunicorn_exec --workers $workers --bind 0.0.0.0:$app_port $wsgi_app
+Restart=always
+RestartSec=10
+User=$run_user
+$(echo -e "$env_vars")
+StandardOutput=append:$app_path/${service_name}.log
+StandardError=append:$app_path/${service_name}.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            log_info "Service akan berjalan di port $app_port"
+            log_info "Pastikan gunicorn sudah terinstall: pip install gunicorn"
+            ;;
+        3)
+            # Django dengan gunicorn
+            read -p "Masukkan path project Django (misal: /var/www/mydjango): " app_path
+            if [ ! -d "$app_path" ]; then
+                log_error "Path $app_path tidak ditemukan!"
+                return 1
+            fi
+            
+            # Deteksi nama project Django
+            if [ -f "$app_path/manage.py" ]; then
+                # Cari folder yang berisi wsgi.py
+                django_project=$(find "$app_path" -name "wsgi.py" -type f | head -n1 | xargs dirname | xargs basename 2>/dev/null)
+                if [ -n "$django_project" ]; then
+                    log_info "Project Django terdeteksi: $django_project"
+                else
+                    read -p "Masukkan nama project Django: " django_project
+                fi
+            else
+                log_error "File manage.py tidak ditemukan. Pastikan ini adalah project Django!"
+                return 1
+            fi
+            
+            read -p "Masukkan nama service systemd (misal: django-app): " service_name
+            read -p "Masukkan port (default: 8000): " app_port
+            app_port=${app_port:-8000}
+            read -p "Masukkan jumlah workers (default: 4): " workers
+            workers=${workers:-4}
+            read -p "Jalankan sebagai user apa? (default: www-data): " run_user
+            run_user=${run_user:-www-data}
+            
+            # Tanya apakah pakai virtual environment
+            read -p "Apakah menggunakan virtual environment? (y/n): " use_venv
+            if [[ "$use_venv" =~ ^[Yy]$ ]]; then
+                read -p "Masukkan path ke virtual environment (misal: /var/www/mydjango/venv): " venv_path
+                if [ ! -d "$venv_path" ]; then
+                    log_error "Virtual environment tidak ditemukan di $venv_path!"
+                    return 1
+                fi
+                gunicorn_exec="$venv_path/bin/gunicorn"
+                # Cek apakah gunicorn sudah terinstall di venv
+                if [ ! -f "$gunicorn_exec" ]; then
+                    log_warning "Gunicorn belum terinstall di virtual environment"
+                    read -p "Install gunicorn sekarang? (y/n): " install_gunicorn
+                    if [[ "$install_gunicorn" =~ ^[Yy]$ ]]; then
+                        "$venv_path/bin/pip" install gunicorn
+                    else
+                        log_error "Gunicorn diperlukan untuk menjalankan aplikasi!"
+                        return 1
+                    fi
+                fi
+            else
+                # Cek apakah gunicorn tersedia secara global
+                if ! command -v gunicorn &> /dev/null; then
+                    log_warning "Gunicorn belum terinstall secara global"
+                    read -p "Install gunicorn sekarang? (y/n): " install_gunicorn
+                    if [[ "$install_gunicorn" =~ ^[Yy]$ ]]; then
+                        pip3 install gunicorn
+                    else
+                        log_error "Gunicorn diperlukan untuk menjalankan aplikasi!"
+                        return 1
+                    fi
+                fi
+                gunicorn_exec=$(which gunicorn)
+            fi
+            
+            # Tanya tentang environment variables
+            read -p "Tambahkan environment variables? (y/n): " add_env
+            env_vars=""
+            if [[ "$add_env" =~ ^[Yy]$ ]]; then
+                echo "Masukkan environment variables (format: KEY=value), ketik 'done' untuk selesai:"
+                while true; do
+                    read -p "ENV: " env_input
+                    if [ "$env_input" = "done" ]; then
+                        break
+                    fi
+                    env_vars="${env_vars}Environment=$env_input\n"
+                done
+            fi
+            
+            service_file="/etc/systemd/system/${service_name}.service"
+            cat > "$service_file" <<EOF
+[Unit]
+Description=Gunicorn instance for Django $service_name
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=$app_path
+ExecStart=$gunicorn_exec --workers $workers --bind 0.0.0.0:$app_port ${django_project}.wsgi:application
+Restart=always
+RestartSec=10
+User=$run_user
+$(echo -e "$env_vars")
+StandardOutput=append:$app_path/${service_name}.log
+StandardError=append:$app_path/${service_name}.log
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            log_info "Service akan berjalan di port $app_port"
+            log_info "Pastikan sudah menjalankan: python manage.py collectstatic"
+            log_info "Pastikan sudah menjalankan: python manage.py migrate"
+            ;;
+        *)
+            log_error "Pilihan tidak valid!"
+            return 1
+            ;;
+    esac
+    
+    # Reload dan start service
+    systemctl daemon-reload
+    systemctl enable "$service_name"
+    
+    # Tanya apakah ingin langsung start
+    read -p "Start service sekarang? (y/n): " start_now
+    if [[ "$start_now" =~ ^[Yy]$ ]]; then
+        systemctl restart "$service_name"
+        sleep 2
+        if systemctl is-active --quiet "$service_name"; then
+            log_info "Service $service_name berhasil dijalankan!"
+        else
+            log_error "Service $service_name gagal dijalankan!"
+            echo "Lihat error: sudo journalctl -u $service_name -n 50"
+        fi
+    fi
+    
+    log_info "Service systemd $service_name berhasil dibuat!"
+    echo
+    log_info "=== PERINTAH BERGUNA ==="
+    echo "Cek status  : sudo systemctl status $service_name"
+    echo "Start       : sudo systemctl start $service_name"
+    echo "Stop        : sudo systemctl stop $service_name"
+    echo "Restart     : sudo systemctl restart $service_name"
+    echo "Lihat log   : sudo journalctl -u $service_name -f"
+    echo "Lihat log   : tail -f $app_path/${service_name}.log"
+}
+
 # === Konfigurasi Nginx untuk SSO ===
 configure_sso_nginx() {
     log_info "=== Konfigurasi Nginx untuk SSO (Keycloak) ==="
