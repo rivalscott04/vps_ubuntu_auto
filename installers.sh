@@ -1429,4 +1429,120 @@ EOF
         log_error "Gagal menjalankan service Keycloak."
         return 1
     fi
+}
+
+# === Docker Installer ===
+install_docker() {
+    log_info "=== Install & Setup Docker ==="
+    
+    # Cek apakah Docker sudah terinstall
+    if command -v docker &> /dev/null; then
+        docker_version=$(docker --version)
+        log_warning "Docker sudah terinstall: $docker_version"
+        read -p "Lanjutkan setup Docker (update repository, install Docker Compose, dll)? (y/n): " continue_setup
+        if [[ ! "$continue_setup" =~ ^[Yy]$ ]]; then
+            log_info "Setup Docker dibatalkan."
+            return 0
+        fi
+    fi
+    
+    # Install dependencies
+    log_info "Menginstall dependencies..."
+    check_and_install_package ca-certificates
+    check_and_install_package curl
+    check_and_install_package gnupg
+    check_and_install_package lsb-release
+    
+    # Tambahkan Docker GPG key
+    log_info "Menambahkan Docker GPG key..."
+    if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+    else
+        log_info "Docker GPG key sudah ada."
+    fi
+    
+    # Deteksi distribusi
+    . /etc/os-release
+    ARCH=$(dpkg --print-architecture)
+    
+    # Tambahkan Docker repository
+    log_info "Menambahkan Docker repository..."
+    if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
+        echo \
+          "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+          $VERSION_CODENAME stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    else
+        log_info "Docker repository sudah ada."
+    fi
+    
+    # Update repository
+    log_info "Update repository..."
+    safe_apt_update
+    
+    # Install Docker Engine, CLI, dan Containerd
+    log_info "Menginstall Docker Engine, CLI, dan Containerd..."
+    echo "[1/3] Install Docker packages..."
+    safe_apt_install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    
+    # Install Docker Compose standalone (jika belum ada)
+    if ! command -v docker-compose &> /dev/null; then
+        log_info "Menginstall Docker Compose standalone..."
+        echo "[2/3] Install Docker Compose..."
+        DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+        curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+        log_info "Docker Compose ${DOCKER_COMPOSE_VERSION} berhasil diinstall!"
+    else
+        log_info "Docker Compose sudah terinstall: $(docker-compose --version)"
+    fi
+    
+    # Start dan enable Docker service
+    log_info "Mengaktifkan Docker service..."
+    echo "[3/3] Setup Docker service..."
+    systemctl enable docker
+    systemctl start docker
+    
+    # Verifikasi instalasi
+    if systemctl is-active --quiet docker; then
+        docker_version=$(docker --version)
+        docker_compose_version=$(docker compose version 2>/dev/null || docker-compose --version 2>/dev/null || echo "N/A")
+        log_info "Docker berhasil diinstall dan diaktifkan!"
+        log_info "Docker version: $docker_version"
+        log_info "Docker Compose version: $docker_compose_version"
+        
+        # Tanya apakah ingin menambahkan user ke docker group
+        echo
+        read -p "Tambahkan user saat ini ke docker group? (y/n): " add_user_to_docker
+        if [[ "$add_user_to_docker" =~ ^[Yy]$ ]]; then
+            CURRENT_USER=${SUDO_USER:-$USER}
+            if [ -n "$CURRENT_USER" ] && [ "$CURRENT_USER" != "root" ]; then
+                usermod -aG docker "$CURRENT_USER"
+                log_info "User $CURRENT_USER telah ditambahkan ke docker group."
+                log_warning "User perlu logout dan login lagi untuk menggunakan Docker tanpa sudo."
+            else
+                log_warning "Tidak dapat menentukan user. Tambahkan manual dengan: sudo usermod -aG docker <username>"
+            fi
+        fi
+        
+        # Tanya apakah ingin konfigurasi Docker
+        echo
+        read -p "Ingin melakukan konfigurasi Docker (daemon.json, dll)? (y/n): " configure_docker
+        if [[ "$configure_docker" =~ ^[Yy]$ ]]; then
+            configure_docker_settings
+        fi
+        
+        echo
+        log_info "=== INFORMASI DOCKER ==="
+        echo "1. Docker service: systemctl status docker"
+        echo "2. Test Docker: sudo docker run hello-world"
+        echo "3. Docker Compose: docker compose version"
+        echo "4. Log Docker: journalctl -u docker -f"
+        echo
+        log_info "Docker siap digunakan!"
+    else
+        log_error "Docker service gagal diaktifkan!"
+        return 1
+    fi
 } 

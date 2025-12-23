@@ -1500,4 +1500,343 @@ EOF
         rm -f "/etc/nginx/sites-enabled/${domain_name}"
         return 1
     fi
+}
+
+# === Konfigurasi Docker ===
+configure_docker_settings() {
+    log_info "=== Konfigurasi Docker Settings ==="
+    
+    # Cek apakah Docker sudah terinstall
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker belum terinstall. Install Docker terlebih dahulu."
+        return 1
+    fi
+    
+    # Buat direktori untuk daemon.json jika belum ada
+    mkdir -p /etc/docker
+    
+    # Backup daemon.json jika sudah ada
+    if [ -f /etc/docker/daemon.json ]; then
+        cp /etc/docker/daemon.json /etc/docker/daemon.json.backup.$(date +%Y%m%d%H%M%S)
+        log_info "Backup daemon.json dibuat."
+    fi
+    
+    # Tanya konfigurasi yang ingin diatur
+    echo "Pilih konfigurasi Docker yang ingin diatur:"
+    echo "1. Logging (log driver, log rotation)"
+    echo "2. Storage driver"
+    echo "3. Network (default bridge, DNS)"
+    echo "4. Registry mirrors (untuk akses lebih cepat)"
+    echo "5. Semua konfigurasi di atas"
+    echo "0. Batal"
+    read -p "Pilihan [0-5]: " docker_config_choice
+    
+    case $docker_config_choice in
+        1)
+            configure_docker_logging
+            ;;
+        2)
+            configure_docker_storage
+            ;;
+        3)
+            configure_docker_network
+            ;;
+        4)
+            configure_docker_registry
+            ;;
+        5)
+            configure_docker_logging
+            configure_docker_storage
+            configure_docker_network
+            configure_docker_registry
+            log_info "Semua konfigurasi Docker selesai!"
+            ;;
+        0)
+            log_info "Konfigurasi Docker dibatalkan."
+            return 0
+            ;;
+        *)
+            log_error "Pilihan tidak valid!"
+            return 1
+            ;;
+    esac
+    
+    # Reload Docker daemon
+    log_info "Menerapkan konfigurasi..."
+    systemctl daemon-reload
+    systemctl restart docker
+    
+    if systemctl is-active --quiet docker; then
+        log_info "Konfigurasi Docker berhasil diterapkan!"
+    else
+        log_error "Docker gagal restart setelah konfigurasi!"
+        log_warning "Restore backup dengan: sudo cp /etc/docker/daemon.json.backup.* /etc/docker/daemon.json"
+        return 1
+    fi
+}
+
+configure_docker_logging() {
+    log_info "Mengkonfigurasi Docker logging..."
+    
+    echo "Pilih log driver:"
+    echo "1. json-file (default, dengan rotation)"
+    echo "2. syslog"
+    echo "3. journald"
+    read -p "Pilihan [1-3]: " log_driver_choice
+    
+    case $log_driver_choice in
+        1)
+            log_driver="json-file"
+            read -p "Max file size (default: 10m): " max_file_size
+            max_file_size=${max_file_size:-10m}
+            read -p "Max files (default: 3): " max_files
+            max_files=${max_files:-3}
+            
+            # Merge dengan konfigurasi yang ada
+            python3 -c "
+import json
+try:
+    with open('/etc/docker/daemon.json', 'r') as f:
+        config = json.load(f)
+except:
+    config = {}
+config['log-driver'] = '$log_driver'
+config['log-opts'] = {
+    'max-size': '$max_file_size',
+    'max-file': '$max_files'
+}
+with open('/etc/docker/daemon.json', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null || {
+                # Fallback jika Python tidak tersedia
+                if [ -f /etc/docker/daemon.json ]; then
+                    # Backup dan merge manual (sederhana)
+                    cp /etc/docker/daemon.json /etc/docker/daemon.json.tmp
+                fi
+                cat > /etc/docker/daemon.json <<EOF
+{
+  "log-driver": "$log_driver",
+  "log-opts": {
+    "max-size": "$max_file_size",
+    "max-file": "$max_files"
+  }
+}
+EOF
+            }
+            ;;
+        2)
+            log_driver="syslog"
+            python3 -c "
+import json
+try:
+    with open('/etc/docker/daemon.json', 'r') as f:
+        config = json.load(f)
+except:
+    config = {}
+config['log-driver'] = '$log_driver'
+with open('/etc/docker/daemon.json', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null || {
+                if [ -f /etc/docker/daemon.json ]; then
+                    cp /etc/docker/daemon.json /etc/docker/daemon.json.tmp
+                fi
+                cat > /etc/docker/daemon.json <<EOF
+{
+  "log-driver": "$log_driver"
+}
+EOF
+            }
+            ;;
+        3)
+            log_driver="journald"
+            python3 -c "
+import json
+try:
+    with open('/etc/docker/daemon.json', 'r') as f:
+        config = json.load(f)
+except:
+    config = {}
+config['log-driver'] = '$log_driver'
+with open('/etc/docker/daemon.json', 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null || {
+                if [ -f /etc/docker/daemon.json ]; then
+                    cp /etc/docker/daemon.json /etc/docker/daemon.json.tmp
+                fi
+                cat > /etc/docker/daemon.json <<EOF
+{
+  "log-driver": "$log_driver"
+}
+EOF
+            }
+            ;;
+        *)
+            log_warning "Pilihan tidak valid, menggunakan default (json-file)"
+            log_driver="json-file"
+            ;;
+    esac
+    
+    log_info "Log driver diatur ke: $log_driver"
+}
+
+configure_docker_storage() {
+    log_info "Mengkonfigurasi Docker storage driver..."
+    
+    echo "Pilih storage driver:"
+    echo "1. overlay2 (recommended, default)"
+    echo "2. devicemapper"
+    echo "3. aufs"
+    read -p "Pilihan [1-3]: " storage_choice
+    
+    case $storage_choice in
+        1)
+            storage_driver="overlay2"
+            ;;
+        2)
+            storage_driver="devicemapper"
+            ;;
+        3)
+            storage_driver="aufs"
+            ;;
+        *)
+            log_warning "Pilihan tidak valid, menggunakan default (overlay2)"
+            storage_driver="overlay2"
+            ;;
+    esac
+    
+    # Merge dengan konfigurasi yang ada
+    if [ -f /etc/docker/daemon.json ]; then
+        # Sederhana: tambahkan storage-driver
+        python3 -c "
+import json
+import sys
+try:
+    with open('/etc/docker/daemon.json', 'r') as f:
+        config = json.load(f)
+    config['storage-driver'] = '$storage_driver'
+    with open('/etc/docker/daemon.json', 'w') as f:
+        json.dump(config, f, indent=2)
+except:
+    config = {'storage-driver': '$storage_driver'}
+    with open('/etc/docker/daemon.json', 'w') as f:
+        json.dump(config, f, indent=2)
+" 2>/dev/null || {
+            # Fallback jika Python tidak tersedia
+            cat > /etc/docker/daemon.json <<EOF
+{
+  "storage-driver": "$storage_driver"
+}
+EOF
+        }
+    else
+        cat > /etc/docker/daemon.json <<EOF
+{
+  "storage-driver": "$storage_driver"
+}
+EOF
+    fi
+    
+    log_info "Storage driver diatur ke: $storage_driver"
+}
+
+configure_docker_network() {
+    log_info "Mengkonfigurasi Docker network..."
+    
+    read -p "Masukkan DNS server (pisahkan dengan koma, contoh: 8.8.8.8,8.8.4.4): " dns_servers
+    dns_servers=${dns_servers:-8.8.8.8,8.8.4.4}
+    
+    # Merge dengan konfigurasi yang ada
+    if [ -f /etc/docker/daemon.json ]; then
+        python3 -c "
+import json
+dns_list = '$dns_servers'.split(',')
+try:
+    with open('/etc/docker/daemon.json', 'r') as f:
+        config = json.load(f)
+    config['dns'] = dns_list
+    with open('/etc/docker/daemon.json', 'w') as f:
+        json.dump(config, f, indent=2)
+except:
+    config = {'dns': dns_list}
+    with open('/etc/docker/daemon.json', 'w') as f:
+        json.dump(config, f, indent=2)
+" 2>/dev/null || {
+            # Fallback
+            cat > /etc/docker/daemon.json <<EOF
+{
+  "dns": [$(echo $dns_servers | sed 's/,/", "/g' | sed 's/^/"/' | sed 's/$/"/')]
+}
+EOF
+        }
+    else
+        cat > /etc/docker/daemon.json <<EOF
+{
+  "dns": [$(echo $dns_servers | sed 's/,/", "/g' | sed 's/^/"/' | sed 's/$/"/')]
+}
+EOF
+    fi
+    
+    log_info "DNS server diatur ke: $dns_servers"
+}
+
+configure_docker_registry() {
+    log_info "Mengkonfigurasi Docker registry mirrors..."
+    
+    echo "Pilih registry mirror:"
+    echo "1. Docker Hub (default, tidak perlu mirror)"
+    echo "2. Aliyun (China)"
+    echo "3. Custom registry mirror"
+    read -p "Pilihan [1-3]: " registry_choice
+    
+    case $registry_choice in
+        1)
+            log_info "Menggunakan Docker Hub default (tidak ada mirror)"
+            return 0
+            ;;
+        2)
+            registry_mirror="https://registry.cn-hangzhou.aliyuncs.com"
+            ;;
+        3)
+            read -p "Masukkan URL registry mirror: " registry_mirror
+            ;;
+        *)
+            log_warning "Pilihan tidak valid, menggunakan default"
+            return 0
+            ;;
+    esac
+    
+    # Merge dengan konfigurasi yang ada
+    if [ -f /etc/docker/daemon.json ]; then
+        python3 -c "
+import json
+try:
+    with open('/etc/docker/daemon.json', 'r') as f:
+        config = json.load(f)
+    if 'registry-mirrors' not in config:
+        config['registry-mirrors'] = []
+    if '$registry_mirror' not in config['registry-mirrors']:
+        config['registry-mirrors'].append('$registry_mirror')
+    with open('/etc/docker/daemon.json', 'w') as f:
+        json.dump(config, f, indent=2)
+except:
+    config = {'registry-mirrors': ['$registry_mirror']}
+    with open('/etc/docker/daemon.json', 'w') as f:
+        json.dump(config, f, indent=2)
+" 2>/dev/null || {
+            # Fallback
+            cat > /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": ["$registry_mirror"]
+}
+EOF
+        }
+    else
+        cat > /etc/docker/daemon.json <<EOF
+{
+  "registry-mirrors": ["$registry_mirror"]
+}
+EOF
+    fi
+    
+    log_info "Registry mirror diatur ke: $registry_mirror"
 } 
