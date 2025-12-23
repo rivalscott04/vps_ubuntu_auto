@@ -1840,3 +1840,226 @@ EOF
     
     log_info "Registry mirror diatur ke: $registry_mirror"
 } 
+
+# === Menu Hapus / Cleanup ===
+
+confirm_cleanup() {
+    local prompt_msg=$1
+    if [ "$CLEANUP_FORCE" = "1" ]; then
+        return 0
+    fi
+    read -p "$prompt_msg (y/n): " ans
+    if [[ ! "$ans" =~ ^[Yy]$ ]]; then
+        log_info "Dibatalkan."
+        return 1
+    fi
+}
+
+purge_packages() {
+    if [ $# -eq 0 ]; then
+        return 0
+    fi
+    log_info "Menghapus paket: $*"
+    apt-get purge -y "$@" >/dev/null 2>&1 || log_warning "Gagal purge sebagian paket."
+    apt-get autoremove -y >/dev/null 2>&1
+}
+
+cleanup_databases() {
+    echo "=== Hapus Database (MySQL/MariaDB/PostgreSQL) ==="
+    local found=()
+    systemctl is-active --quiet mysql && found+=("MySQL")
+    systemctl is-active --quiet mariadb && found+=("MariaDB")
+    systemctl is-active --quiet postgresql && found+=("PostgreSQL")
+    if [ ${#found[@]} -eq 0 ]; then
+        log_warning "Tidak terdeteksi database yang aktif, tetap akan membersihkan paket & data."
+    else
+        echo "Terdeteksi: ${found[*]}"
+    fi
+    confirm_cleanup "Lanjut hapus database dan semua datanya?" || return 1
+
+    for svc in mysql mariadb postgresql; do
+        systemctl stop "$svc" 2>/dev/null
+        systemctl disable "$svc" 2>/dev/null
+    done
+
+    purge_packages mysql-server mysql-client mariadb-server mariadb-client postgresql postgresql-contrib
+    rm -rf /var/lib/mysql /etc/mysql /var/log/mysql
+    rm -rf /var/lib/postgresql /etc/postgresql /var/log/postgresql
+    log_info "Database dan data terkait dibersihkan."
+}
+
+cleanup_docker() {
+    echo "=== Hapus Docker ==="
+    if command -v docker >/dev/null 2>&1; then
+        docker --version
+    else
+        log_warning "Docker CLI tidak terdeteksi, tetap membersihkan."
+    fi
+    confirm_cleanup "Lanjut hapus Docker, images, dan data?" || return 1
+
+    systemctl stop docker 2>/dev/null
+    systemctl stop containerd 2>/dev/null
+    systemctl disable docker 2>/dev/null
+    systemctl disable containerd 2>/dev/null
+
+    purge_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-compose docker.io
+
+    rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
+    log_info "Docker dan datanya dibersihkan."
+}
+
+cleanup_nginx_php() {
+    echo "=== Hapus Nginx & PHP-FPM ==="
+    confirm_cleanup "Lanjut hapus Nginx dan PHP beserta konfigurasinya?" || return 1
+
+    systemctl stop nginx 2>/dev/null
+    systemctl disable nginx 2>/dev/null
+
+    # Stop semua service php-fpm yang ada
+    local php_svcs
+    php_svcs=$(systemctl list-units --type=service --all | awk '/php.*fpm/ {print $1}')
+    if [ -n "$php_svcs" ]; then
+        echo "$php_svcs" | while read -r svc; do
+            systemctl stop "$svc" 2>/dev/null
+            systemctl disable "$svc" 2>/dev/null
+        done
+    fi
+
+    # Kumpulkan paket PHP yang terinstall
+    local php_packages
+    php_packages=$(dpkg -l | awk '/^ii  php/ {print $2}')
+
+    purge_packages nginx nginx-common nginx-core $php_packages
+
+    rm -rf /etc/nginx /var/log/nginx /var/lib/nginx
+    rm -rf /etc/php* /var/log/php* /var/lib/php*
+    log_info "Nginx dan PHP dibersihkan."
+}
+
+cleanup_node() {
+    echo "=== Hapus Node.js & npm ==="
+    confirm_cleanup "Lanjut hapus Node.js dan npm?" || return 1
+    purge_packages nodejs npm
+    rm -rf /usr/local/lib/node_modules /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/npx
+    log_info "Node.js/npm dibersihkan."
+}
+
+cleanup_wordpress() {
+    echo "=== Hapus WordPress ==="
+    read -p "Masukkan path instalasi WordPress yang akan dihapus (pisahkan spasi jika banyak): " wp_paths
+    if [ -z "$wp_paths" ]; then
+        log_warning "Tidak ada path diberikan, batal."
+        return 1
+    fi
+    confirm_cleanup "Lanjut hapus direktori WordPress yang disebutkan?" || return 1
+    for p in $wp_paths; do
+        rm -rf "$p"
+        log_info "Hapus: $p"
+    done
+    read -p "Masukkan domain (opsional) untuk hapus konfigurasi Nginx: " wp_domain
+    if [ -n "$wp_domain" ]; then
+        rm -f "/etc/nginx/sites-available/$wp_domain" "/etc/nginx/sites-enabled/$wp_domain"
+        systemctl reload nginx 2>/dev/null
+        log_info "Konfigurasi Nginx untuk $wp_domain dihapus."
+    fi
+}
+
+cleanup_ssl() {
+    echo "=== Hapus SSL (Let's Encrypt) ==="
+    local live_dir="/etc/letsencrypt/live"
+    if [ ! -d "$live_dir" ]; then
+        log_warning "Tidak ada sertifikat di $live_dir"
+        return 1
+    fi
+    echo "Daftar domain:"
+    ls "$live_dir"
+    read -p "Masukkan domain yang akan dihapus (pisahkan spasi atau 'all'): " domains
+    if [ -z "$domains" ]; then
+        log_warning "Tidak ada domain diberikan."
+        return 1
+    fi
+    if [ "$domains" = "all" ]; then
+        domains=$(ls "$live_dir")
+    fi
+    confirm_cleanup "Lanjut hapus sertifikat: $domains ?" || return 1
+    for d in $domains; do
+        if command -v certbot >/dev/null 2>&1; then
+            certbot delete --cert-name "$d" --non-interactive >/dev/null 2>&1 || true
+        fi
+        rm -rf "/etc/letsencrypt/live/$d" "/etc/letsencrypt/archive/$d" "/etc/letsencrypt/renewal/$d.conf"
+        log_info "Sertifikat $d dihapus."
+    done
+    systemctl reload nginx 2>/dev/null
+}
+
+cleanup_cronjobs() {
+    echo "=== Hapus Cronjobs yang dibuat script ==="
+    confirm_cleanup "Hapus cronjobs backup/cache yang dibuat script ini?" || return 1
+    crontab -l 2>/dev/null | grep -v "backup-database.sh" | grep -v "cleanup-temp.sh" | grep -v "cleanup-cache.sh" | crontab - 2>/dev/null
+    rm -f /usr/local/bin/backup-database.sh /usr/local/bin/cleanup-temp.sh /usr/local/bin/cleanup-cache.sh
+    log_info "Cronjobs terkait script dibersihkan."
+}
+
+cleanup_keycloak() {
+    echo "=== Hapus SSO/Keycloak ==="
+    confirm_cleanup "Lanjut hapus Keycloak dan konfigurasinya?" || return 1
+    systemctl stop keycloak 2>/dev/null
+    systemctl disable keycloak 2>/dev/null
+    rm -f /etc/systemd/system/keycloak.service
+    systemctl daemon-reload
+    rm -rf /opt/keycloak
+    read -p "Masukkan domain (opsional) untuk hapus konfigurasi Nginx Keycloak: " kc_domain
+    if [ -n "$kc_domain" ]; then
+        rm -f "/etc/nginx/sites-available/$kc_domain" "/etc/nginx/sites-enabled/$kc_domain"
+        systemctl reload nginx 2>/dev/null
+        log_info "Konfigurasi Nginx untuk $kc_domain dihapus."
+    fi
+    log_info "Keycloak dibersihkan."
+}
+
+cleanup_full() {
+    echo "=== FULL CLEANUP ==="
+    read -p "Ketik HAPUS untuk konfirmasi: " final_ans
+    if [ "$final_ans" != "HAPUS" ]; then
+        log_warning "Konfirmasi salah, batalkan."
+        return 1
+    fi
+    CLEANUP_FORCE=1
+    cleanup_databases
+    cleanup_docker
+    cleanup_nginx_php
+    cleanup_node
+    cleanup_ssl
+    cleanup_cronjobs
+    cleanup_keycloak
+    CLEANUP_FORCE=0
+    log_info "Full cleanup selesai."
+}
+
+cleanup_menu() {
+    echo "=== Menu Hapus / Cleanup ==="
+    echo "1. Hapus Database (MySQL/MariaDB/PostgreSQL)"
+    echo "2. Hapus Docker"
+    echo "3. Hapus Nginx & PHP"
+    echo "4. Hapus Node.js"
+    echo "5. Hapus WordPress"
+    echo "6. Hapus SSL (Let's Encrypt)"
+    echo "7. Hapus Cronjobs (backup/cache)"
+    echo "8. Hapus SSO/Keycloak"
+    echo "9. FULL CLEANUP (berbahaya)"
+    echo "0. Kembali"
+    read -p "Pilihan [0-9]: " cleanup_choice
+    case $cleanup_choice in
+        1) cleanup_databases ;;
+        2) cleanup_docker ;;
+        3) cleanup_nginx_php ;;
+        4) cleanup_node ;;
+        5) cleanup_wordpress ;;
+        6) cleanup_ssl ;;
+        7) cleanup_cronjobs ;;
+        8) cleanup_keycloak ;;
+        9) cleanup_full ;;
+        0) return ;;
+        *) log_error "Pilihan tidak valid!" ;;
+    esac
+}

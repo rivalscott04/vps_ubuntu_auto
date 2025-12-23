@@ -137,45 +137,96 @@ install_webserver() {
 
 install_database() {
     echo "Pilih database yang akan diinstall:"
-    echo "1. MySQL"
-    echo "2. PostgreSQL"
-    echo "3. MariaDB"
+    echo "1. MariaDB"
+    echo "2. MySQL"
+    echo "3. PostgreSQL"
     read -p "Pilihan [1-3]: " db_choice
     case $db_choice in
-        1|3)
+        1|2)
+            # MySQL/MariaDB
             if [ "$db_choice" = "1" ]; then
-                log_info "Menginstal MySQL..."
-                echo "[1/1] Install MySQL..."
-                safe_apt_install -y mysql-server
-            else
                 log_info "Menginstal MariaDB..."
                 echo "[1/1] Install MariaDB..."
                 safe_apt_install -y mariadb-server
-            fi
-            mysql_secure_installation
-            echo "Pilih opsi manajemen user:"
-            echo "1. Buat user baru (root tetap ada)"
-            echo "2. Hapus root dan buat user baru"
-            read -p "Pilihan [1-2]: " user_choice
-            case $user_choice in
-                1) configure_mysql_user ;;
-                2) ;; # Hapus seluruh fungsi mysql_change_root dan logic terkait ganti user root MySQL dari script ini.
-                *) log_error "Pilihan tidak valid" ;;
-            esac
-            if [ "$db_choice" = "1" ]; then
-                log_info "MySQL berhasil diinstall!"
             else
+                log_info "Menginstal MySQL..."
+                echo "[1/1] Install MySQL..."
+                safe_apt_install -y mysql-server
+            fi
+
+            # Keamanan dasar
+            mysql_secure_installation
+
+            # Buat user & database langsung
+            create_mysql_like_user_and_db
+
+            if [ "$db_choice" = "1" ]; then
                 log_info "MariaDB berhasil diinstall!"
+            else
+                log_info "MySQL berhasil diinstall!"
             fi
             ;;
-        2)
+        3)
             log_info "Menginstal PostgreSQL..."
             echo "[1/1] Install PostgreSQL..."
             safe_apt_install -y postgresql postgresql-contrib
+
+            # Buat user & database langsung
+            create_postgres_user_and_db
+
             log_info "PostgreSQL berhasil diinstall!"
             ;;
         *) log_error "Pilihan tidak valid" ;;
     esac
+}
+
+# Buat user & database untuk MySQL/MariaDB
+create_mysql_like_user_and_db() {
+    echo "=== Setup user & database MySQL/MariaDB ==="
+    read -p "Nama database: " db_name
+    read -p "Username: " db_user
+    read -s -p "Password: " db_pass; echo
+    read -p "Host user [localhost]: " db_host
+    db_host=${db_host:-localhost}
+
+    if [ -z "$db_name" ] || [ -z "$db_user" ] || [ -z "$db_pass" ]; then
+        log_warning "Nama DB/username/password tidak boleh kosong. Lewati setup user."
+        return 0
+    fi
+
+    # Gunakan sudo agar kompatibel auth_socket
+    sudo mysql -e "CREATE DATABASE IF NOT EXISTS \\\`$db_name\\\`;"
+    sudo mysql -e "CREATE USER IF NOT EXISTS '$db_user'@'$db_host' IDENTIFIED BY '$db_pass';"
+    sudo mysql -e "GRANT ALL PRIVILEGES ON \\\`$db_name\\\`.* TO '$db_user'@'$db_host';"
+    sudo mysql -e "FLUSH PRIVILEGES;"
+
+    log_info "User '$db_user' dan database '$db_name' siap digunakan."
+}
+
+# Buat user & database untuk PostgreSQL
+create_postgres_user_and_db() {
+    echo "=== Setup user & database PostgreSQL ==="
+    read -p "Nama database: " pg_db
+    read -p "Username: " pg_user
+    read -s -p "Password: " pg_pass; echo
+
+    if [ -z "$pg_db" ] || [ -z "$pg_user" ] || [ -z "$pg_pass" ]; then
+        log_warning "Nama DB/username/password tidak boleh kosong. Lewati setup user."
+        return 0
+    fi
+
+    # Cek dan buat role
+    sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$pg_user'" | grep -q 1 || \
+        sudo -u postgres psql -c "CREATE ROLE \"$pg_user\" WITH LOGIN ENCRYPTED PASSWORD '$pg_pass';"
+
+    # Cek dan buat database
+    sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$pg_db'" | grep -q 1 || \
+        sudo -u postgres createdb -O "$pg_user" "$pg_db"
+
+    # Pastikan ownership sesuai
+    sudo -u postgres psql -c "ALTER DATABASE \"$pg_db\" OWNER TO \"$pg_user\";"
+
+    log_info "User '$pg_user' dan database '$pg_db' siap digunakan."
 }
 
 install_phpmyadmin() {

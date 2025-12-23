@@ -30,10 +30,11 @@ while true; do
     printf "│ %-37s │ %-37s │ %-37s │\n" "8. Instal & Setup SSO" "" "23. Setup Virtual Environment (venv)"
     printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi Aplikasi Web" "" "24. Konfigurasi systemd Python"
     printf "│ %-37s │ %-37s │ %-37s │\n" "10. Konfigurasi Routing Berbasis Path" "" "25. Instal & Setup Docker"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "" "" "26. Menu Hapus (uninstall)"
     echo "├───────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────┤"
     printf "│ %-111s │\n" "0. Keluar"
     echo "└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-    read -p "Pilihan [0-25]: " choice
+    read -p "Pilihan [0-26]: " choice
     case $choice in
         1) install_php ;;
         2) install_webserver ;;
@@ -60,6 +61,7 @@ while true; do
         23) setup_venv ;;
         24) configure_python_systemd ;;
         25) install_docker ;;
+        26) cleanup_menu ;;
         99) setup_basic_vps ;;
         0) log_info "Terima kasih telah menggunakan script ini!"
            exit 0 ;;
