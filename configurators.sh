@@ -17,7 +17,7 @@ configure_webapp() {
     echo "3. Node.js/Express"
     echo "4. React/Vite (static, folder dist)"
     echo "5. Next.js"
-    echo "6. Svelte (static, folder build)"
+    echo "6. Svelte (static, folder dist)"
     read -p "Pilihan [1-6]: " app_type
     echo "Apakah ingin menggunakan domain utama atau subdomain?"
     echo "1. Domain utama (misal: domain.com)"
@@ -187,13 +187,13 @@ server {
 EOF
             ;;
         6)
-            # Svelte (static, folder build)
+            # Svelte (static, folder dist)
             nginx_conf="/etc/nginx/sites-available/${domain_name}"
             cat > "$nginx_conf" <<EOF
 server {
     listen 80;
     server_name ${domain_name};
-    root ${app_path}/build;
+    root ${app_path}/dist;
     index index.html;
 
     location / {
@@ -283,7 +283,7 @@ configure_webapp_path_based() {
         echo "3. Node.js/Express"
         echo "4. React/Vite (static, folder dist)"
         echo "5. Next.js"
-        echo "6. Svelte (static, folder build)"
+        echo "6. Svelte (static, folder dist)"
         read -p "Pilihan [1-6]: " app_type
         
         read -p "Masukkan path root aplikasi (misal: /var/www/$app_path_name): " app_root
@@ -479,13 +479,13 @@ EOF
             "svelte")
                 cat >> "$nginx_conf" <<EOF
     location /$path_name {
-        alias $app_root/build;
+        alias $app_root/dist;
         index index.html;
         try_files \$uri \$uri/ /$path_name/index.html;
     }
 
     location ~* ^/$path_name/.*\.(?:css|js|woff2?|ttf|eot|ico|svg|jpg|jpeg|gif|png|webp)$ {
-        alias $app_root/build;
+        alias $app_root/dist;
         expires 1y;
         access_log off;
     }
