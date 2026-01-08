@@ -92,44 +92,46 @@ show_general_info() {
     echo -e "${CYAN}║${NC}        ${MAGENTA}🌐  VPS SYSTEM INFORMATION  ${NC}         ${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo -e "$LINE"
-    echo -e "${YELLOW}CPU Model:${NC} $CPU_MODEL"
-    echo -e "${YELLOW}CPU Cores:${NC} $CPU_CORES @ ${CPU_FREQ} MHz"
+    
+    # Format konsisten dengan printf untuk alignment
+    printf "${YELLOW}%-18s${NC} %s\n" "CPU Model:" "$CPU_MODEL"
+    printf "${YELLOW}%-18s${NC} %s @ %s MHz\n" "CPU Cores:" "$CPU_CORES" "$CPU_FREQ"
     if [ ! -z "$CPU_CACHE" ]; then
-        echo -e "${YELLOW}CPU Cache:${NC} $CPU_CACHE"
+        printf "${YELLOW}%-18s${NC} %s\n" "CPU Cache:" "$CPU_CACHE"
     fi
     
     # AES-NI Check
     if grep -q "^flags.*aes" /proc/cpuinfo; then
-        echo -e "${GREEN}✓${NC} ${YELLOW}AES-NI:${NC} Enabled"
+        printf "${GREEN}%-18s${NC} %s\n" "✓ AES-NI:" "Enabled"
     else
-        echo -e "${RED}✗${NC} ${YELLOW}AES-NI:${NC} Disabled"
+        printf "${RED}%-18s${NC} %s\n" "✗ AES-NI:" "Disabled"
     fi
     
     # VM-x/AMD-V Check
     if grep -q "^flags.*vmx\|^flags.*svm" /proc/cpuinfo; then
-        echo -e "${GREEN}✓${NC} ${YELLOW}VM-x/AMD-V:${NC} Enabled"
+        printf "${GREEN}%-18s${NC} %s\n" "✓ VM-x/AMD-V:" "Enabled"
     else
-        echo -e "${RED}✗${NC} ${YELLOW}VM-x/AMD-V:${NC} Disabled"
+        printf "${RED}%-18s${NC} %s\n" "✗ VM-x/AMD-V:" "Disabled"
     fi
     
-    echo -e "${YELLOW}Total Disk:${NC} $DISK_TOTAL ($DISK_USED Used)"
-    echo -e "${YELLOW}Total Mem:${NC} $MEM_TOTAL ($MEM_USED Used)"
-    echo -e "${YELLOW}System uptime:${NC} $UPTIME_DAYS days, $UPTIME_HOURS hour $UPTIME_MINS min"
-    echo -e "${YELLOW}Load average:${NC} $LOAD_AVG"
-    echo -e "${YELLOW}OS:${NC} $OS"
-    echo -e "${YELLOW}Arch:${NC} $ARCH ($BIT Bit)"
-    echo -e "${YELLOW}Kernel:${NC} $KERNEL"
-    echo -e "${YELLOW}TCP CC:${NC} $TCP_CC"
-    echo -e "${YELLOW}Virtualization:${NC} $VIRT"
-    echo -e "${YELLOW}IPv4/IPv6:${NC} $IPV4_ICON $IPV4_STATUS / $IPV6_ICON $IPV6_STATUS"
+    printf "${YELLOW}%-18s${NC} %s (%s Used)\n" "Total Disk:" "$DISK_TOTAL" "$DISK_USED"
+    printf "${YELLOW}%-18s${NC} %s (%s Used)\n" "Total Mem:" "$MEM_TOTAL" "$MEM_USED"
+    printf "${YELLOW}%-18s${NC} %s days, %s hour %s min\n" "System uptime:" "$UPTIME_DAYS" "$UPTIME_HOURS" "$UPTIME_MINS"
+    printf "${YELLOW}%-18s${NC} %s\n" "Load average:" "$LOAD_AVG"
+    printf "${YELLOW}%-18s${NC} %s\n" "OS:" "$OS"
+    printf "${YELLOW}%-18s${NC} %s (%s Bit)\n" "Arch:" "$ARCH" "$BIT"
+    printf "${YELLOW}%-18s${NC} %s\n" "Kernel:" "$KERNEL"
+    printf "${YELLOW}%-18s${NC} %s\n" "TCP CC:" "$TCP_CC"
+    printf "${YELLOW}%-18s${NC} %s\n" "Virtualization:" "$VIRT"
+    printf "${YELLOW}%-18s${NC} %s %s / %s %s\n" "IPv4/IPv6:" "$IPV4_ICON" "$IPV4_STATUS" "$IPV6_ICON" "$IPV6_STATUS"
     
     if [ ! -z "$ORG" ]; then
-        echo -e "${YELLOW}Organization:${NC} $ORG"
+        printf "${YELLOW}%-18s${NC} %s\n" "Organization:" "$ORG"
     fi
     if [ ! -z "$CITY" ] && [ ! -z "$COUNTRY" ]; then
-        echo -e "${YELLOW}Location:${NC} $CITY / $COUNTRY"
+        printf "${YELLOW}%-18s${NC} %s / %s\n" "Location:" "$CITY" "$COUNTRY"
         if [ ! -z "$REGION" ]; then
-            echo -e "${YELLOW}Region:${NC} $REGION"
+            printf "${YELLOW}%-18s${NC} %s\n" "Region:" "$REGION"
         fi
     fi
     
@@ -170,10 +172,10 @@ show_general_info() {
     
     IO_AVG=$(echo "scale=1; ($IO_SPEED_1 + $IO_SPEED_2 + $IO_SPEED_3) / 3" | bc)
     
-    echo -e "${YELLOW}I/O Speed (1st run):${NC} ${GREEN}${IO_SPEED_1} MB/s${NC}"
-    echo -e "${YELLOW}I/O Speed (2nd run):${NC} ${GREEN}${IO_SPEED_2} MB/s${NC}"
-    echo -e "${YELLOW}I/O Speed (3rd run):${NC} ${GREEN}${IO_SPEED_3} MB/s${NC}"
-    echo -e "${YELLOW}I/O Speed (average):${NC} ${GREEN}${IO_AVG} MB/s${NC}"
+    printf "${YELLOW}%-18s${NC} ${GREEN}%s MB/s${NC}\n" "I/O Speed (1st run):" "$IO_SPEED_1"
+    printf "${YELLOW}%-18s${NC} ${GREEN}%s MB/s${NC}\n" "I/O Speed (2nd run):" "$IO_SPEED_2"
+    printf "${YELLOW}%-18s${NC} ${GREEN}%s MB/s${NC}\n" "I/O Speed (3rd run):" "$IO_SPEED_3"
+    printf "${YELLOW}%-18s${NC} ${GREEN}%s MB/s${NC}\n" "I/O Speed (average):" "$IO_AVG"
     
     echo ""
     echo ""
@@ -192,7 +194,21 @@ show_general_info() {
     # Function to find server by location
     find_server_by_location() {
         local location=$1
-        speedtest-cli --list 2>/dev/null | grep -i "$location" | head -1 | awk '{print $1}' | tr -d '.'
+        # Get server list and find by location name
+        local server_list=$(speedtest-cli --list 2>/dev/null)
+        if [ -z "$server_list" ]; then
+            echo ""
+            return
+        fi
+        
+        # Try to find server - format: "ID) Server Name (Location)"
+        local found=$(echo "$server_list" | grep -i "$location" | head -1)
+        if [ ! -z "$found" ]; then
+            # Extract server ID (number before closing parenthesis)
+            echo "$found" | sed -n 's/^[[:space:]]*\([0-9]*\))[[:space:]].*/\1/p' | head -1
+        else
+            echo ""
+        fi
     }
     
     # Function to run speedtest
@@ -201,22 +217,28 @@ show_general_info() {
         local server_name=$2
         
         if [ -z "$server_id" ] || [ "$server_id" = "auto" ]; then
-            result=$(timeout 60 speedtest-cli --simple --secure 2>/dev/null)
+            # Auto-select best server
+            result=$(timeout 90 speedtest-cli --simple --secure 2>/dev/null)
         else
-            result=$(timeout 60 speedtest-cli --server $server_id --simple --secure 2>/dev/null)
+            # Test specific server
+            result=$(timeout 90 speedtest-cli --server "$server_id" --simple --secure 2>/dev/null)
         fi
         
-        if [ $? -eq 0 ] && [ ! -z "$result" ]; then
+        local exit_code=$?
+        
+        if [ $exit_code -eq 0 ] && [ ! -z "$result" ]; then
             local upload=$(echo "$result" | grep -i Upload | awk '{print $2}')
             local download=$(echo "$result" | grep -i Download | awk '{print $2}')
             local ping=$(echo "$result" | grep -i Ping | awk '{print $2}')
             
-            printf "%-20s %-20s %-20s %-15s\n" "$server_name" "${GREEN}${upload}${NC}" "${RED}${download}${NC}" "${ping}"
-            return 0
-        else
-            printf "%-20s %-20s %-20s %-15s\n" "$server_name" "Failed" "Failed" "Failed"
-            return 1
+            if [ ! -z "$upload" ] && [ ! -z "$download" ] && [ ! -z "$ping" ]; then
+                printf "%-20s %-20s %-20s %-15s\n" "$server_name" "${GREEN}${upload}${NC}" "${RED}${download}${NC}" "${ping}"
+                return 0
+            fi
         fi
+        
+        printf "%-20s %-20s %-20s %-15s\n" "$server_name" "Failed" "Failed" "Failed"
+        return 1
     }
     
     # Print table header
@@ -226,29 +248,47 @@ show_general_info() {
     echo -e "${YELLOW}Running network speedtests (this may take a while)...${NC}"
     echo ""
     
-    # Default speedtest (auto-select)
+    # Default speedtest (auto-select best server)
     run_speedtest "" "Speedtest.net"
     
     # Try to find and test servers in different locations
+    # Paris, France
     PARIS_SERVER=$(find_server_by_location "Paris")
-    if [ ! -z "$PARIS_SERVER" ]; then
+    if [ ! -z "$PARIS_SERVER" ] && [ "$PARIS_SERVER" != "" ]; then
         run_speedtest "$PARIS_SERVER" "Paris, FR"
     else
-        run_speedtest "4817" "Paris, FR" || run_speedtest "21569" "Paris, FR"
+        # Try known server IDs for Paris
+        for server_id in 4817 21569 16348 16349; do
+            if run_speedtest "$server_id" "Paris, FR"; then
+                break
+            fi
+        done
     fi
     
+    # Singapore
     SINGAPORE_SERVER=$(find_server_by_location "Singapore")
-    if [ ! -z "$SINGAPORE_SERVER" ]; then
+    if [ ! -z "$SINGAPORE_SERVER" ] && [ "$SINGAPORE_SERVER" != "" ]; then
         run_speedtest "$SINGAPORE_SERVER" "Singapore, SG"
     else
-        run_speedtest "7311" "Singapore, SG" || run_speedtest "13623" "Singapore, SG"
+        # Try known server IDs for Singapore
+        for server_id in 7311 13623 13624 13625; do
+            if run_speedtest "$server_id" "Singapore, SG"; then
+                break
+            fi
+        done
     fi
     
+    # Tokyo, Japan
     TOKYO_SERVER=$(find_server_by_location "Tokyo")
-    if [ ! -z "$TOKYO_SERVER" ]; then
+    if [ ! -z "$TOKYO_SERVER" ] && [ "$TOKYO_SERVER" != "" ]; then
         run_speedtest "$TOKYO_SERVER" "Tokyo, JP"
     else
-        run_speedtest "8438" "Tokyo, JP" || run_speedtest "7510" "Tokyo, JP"
+        # Try known server IDs for Tokyo
+        for server_id in 8438 7510 7511 7512; do
+            if run_speedtest "$server_id" "Tokyo, JP"; then
+                break
+            fi
+        done
     fi
     
     echo ""
