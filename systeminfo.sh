@@ -13,53 +13,258 @@ BOLD='\033[1m'
 LINE="${CYAN}──────────────────────────────────────────────────────────────${NC}"
 
 show_general_info() {
-    OS=$(lsb_release -ds 2>/dev/null || cat /etc/*release | grep PRETTY_NAME | cut -d '"' -f2)
-    HOSTNAME=$(hostname)
-    KERNEL=$(uname -r)
-    UPTIME=$(uptime -p)
-    CPU=$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ //')
-    CORES=$(nproc)
-    LOAD=$(uptime | awk -F'load average:' '{ print $2 }' | sed 's/^ //')
+    START_TIME=$(date +%s)
+    clear
+    
+    # CPU Info
+    CPU_MODEL=$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo | sed 's/^ //')
+    CPU_CORES=$(nproc)
+    CPU_FREQ=$(lscpu 2>/dev/null | grep "CPU MHz" | awk '{print $3}' | head -1)
+    if [ -z "$CPU_FREQ" ]; then
+        CPU_FREQ=$(grep -m1 "cpu MHz" /proc/cpuinfo | awk '{printf "%.3f", $4}')
+    fi
+    CPU_CACHE=$(lscpu 2>/dev/null | grep "L3 cache" | awk '{print $3, $4}' | head -1)
+    if [ -z "$CPU_CACHE" ]; then
+        CPU_CACHE=$(grep -m1 "cache size" /proc/cpuinfo | awk -F: '{print $2}' | sed 's/^ //')
+    fi
+    
+    # Disk Info
+    DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}' | sed 's/G/ GB/')
+    DISK_USED=$(df -h / | awk 'NR==2 {print $3}' | sed 's/G/ GB/')
+    
+    # Memory Info
     MEM_TOTAL=$(free -h | awk '/^Mem:/ {print $2}')
     MEM_USED=$(free -h | awk '/^Mem:/ {print $3}')
-    MEM_FREE=$(free -h | awk '/^Mem:/ {print $4}')
-    DISK_TOTAL=$(df -h / | awk 'END{print $2}')
-    DISK_USED=$(df -h / | awk 'END{print $3}')
-    DISK_AVAIL=$(df -h / | awk 'END{print $4}')
-    IPV4=$(hostname -I | awk '{print $1}')
-    IPV6=$(hostname -I | awk '{print $2}')
-    PUBLIC_IP=$(curl -s ifconfig.me || curl -s ipinfo.io/ip)
-    USER=$(whoami)
-    LOGGED_USERS=$(who | wc -l)
-    LAST_LOGIN=$(last -n 1 -R -F $USER | head -n 1 | awk '{print $4, $5, $6, $7, $8}')
-    clear
+    
+    # System Uptime
+    UPTIME_DAYS=$(uptime -p | awk '{for(i=1;i<=NF;i++) if($i=="days," || $i=="day,") print $(i-1)}')
+    UPTIME_HOURS=$(uptime -p | awk '{for(i=1;i<=NF;i++) if($i=="hours," || $i=="hour,") print $(i-1)}')
+    UPTIME_MINS=$(uptime -p | awk '{for(i=1;i<=NF;i++) if($i=="minutes," || $i=="min,") print $(i-1)}')
+    if [ -z "$UPTIME_DAYS" ]; then UPTIME_DAYS="0"; fi
+    if [ -z "$UPTIME_HOURS" ]; then UPTIME_HOURS="0"; fi
+    if [ -z "$UPTIME_MINS" ]; then UPTIME_MINS="0"; fi
+    
+    # Load Average
+    LOAD_AVG=$(uptime | awk -F'load average:' '{ print $2 }' | sed 's/^ //')
+    
+    # OS Info
+    OS=$(lsb_release -ds 2>/dev/null || cat /etc/*release | grep PRETTY_NAME | cut -d '"' -f2)
+    ARCH=$(uname -m)
+    KERNEL=$(uname -r)
+    BIT=$(getconf LONG_BIT)
+    
+    # TCP Congestion Control
+    TCP_CC=$(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | awk '{print $3}')
+    if [ -z "$TCP_CC" ]; then TCP_CC="N/A"; fi
+    
+    # Virtualization
+    VIRT=$(systemd-detect-virt 2>/dev/null || echo "Unknown")
+    if [ "$VIRT" = "none" ]; then
+        VIRT="Dedicated"
+    fi
+    
+    # IPv4/IPv6 Status
+    IPV4_STATUS=$(ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1 && echo "Online" || echo "Offline")
+    IPV6_STATUS=$(ping6 -c 1 -W 2 2001:4860:4860::8888 >/dev/null 2>&1 && echo "Online" || echo "Offline")
+    IPV4_ICON=$([ "$IPV4_STATUS" = "Online" ] && echo "${GREEN}✓${NC}" || echo "${RED}✗${NC}")
+    IPV6_ICON=$([ "$IPV6_STATUS" = "Online" ] && echo "${GREEN}✓${NC}" || echo "${RED}✗${NC}")
+    
+    # IP Info (Organization & Location)
+    ORG=""
+    CITY=""
+    REGION=""
+    COUNTRY=""
+    if command -v curl >/dev/null 2>&1; then
+        PUBLIC_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null || curl -s --max-time 5 ipinfo.io/ip 2>/dev/null)
+        if [ ! -z "$PUBLIC_IP" ]; then
+            IP_INFO=$(curl -s --max-time 5 "https://ipinfo.io/$PUBLIC_IP/json" 2>/dev/null)
+            if [ ! -z "$IP_INFO" ]; then
+                ORG=$(echo "$IP_INFO" | grep -o '"org":[^,]*' | cut -d'"' -f4)
+                CITY=$(echo "$IP_INFO" | grep -o '"city":[^,]*' | cut -d'"' -f4)
+                REGION=$(echo "$IP_INFO" | grep -o '"region":[^,]*' | cut -d'"' -f4)
+                COUNTRY=$(echo "$IP_INFO" | grep -o '"country":[^,]*' | cut -d'"' -f4)
+            fi
+        fi
+    fi
+    
+    # Display System Information
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}        ${MAGENTA}🌐  VPS SYSTEM INFORMATION  ${NC}         ${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo -e "$LINE"
-    echo -e "${YELLOW}OS         :${NC} $OS"
-    echo -e "${YELLOW}Hostname   :${NC} $HOSTNAME"
-    echo -e "${YELLOW}Kernel     :${NC} $KERNEL"
-    echo -e "${YELLOW}Uptime     :${NC} $UPTIME"
+    echo -e "${YELLOW}CPU Model:${NC} $CPU_MODEL"
+    echo -e "${YELLOW}CPU Cores:${NC} $CPU_CORES @ ${CPU_FREQ} MHz"
+    if [ ! -z "$CPU_CACHE" ]; then
+        echo -e "${YELLOW}CPU Cache:${NC} $CPU_CACHE"
+    fi
+    
+    # AES-NI Check
+    if grep -q "^flags.*aes" /proc/cpuinfo; then
+        echo -e "${GREEN}✓${NC} ${YELLOW}AES-NI:${NC} Enabled"
+    else
+        echo -e "${RED}✗${NC} ${YELLOW}AES-NI:${NC} Disabled"
+    fi
+    
+    # VM-x/AMD-V Check
+    if grep -q "^flags.*vmx\|^flags.*svm" /proc/cpuinfo; then
+        echo -e "${GREEN}✓${NC} ${YELLOW}VM-x/AMD-V:${NC} Enabled"
+    else
+        echo -e "${RED}✗${NC} ${YELLOW}VM-x/AMD-V:${NC} Disabled"
+    fi
+    
+    echo -e "${YELLOW}Total Disk:${NC} $DISK_TOTAL ($DISK_USED Used)"
+    echo -e "${YELLOW}Total Mem:${NC} $MEM_TOTAL ($MEM_USED Used)"
+    echo -e "${YELLOW}System uptime:${NC} $UPTIME_DAYS days, $UPTIME_HOURS hour $UPTIME_MINS min"
+    echo -e "${YELLOW}Load average:${NC} $LOAD_AVG"
+    echo -e "${YELLOW}OS:${NC} $OS"
+    echo -e "${YELLOW}Arch:${NC} $ARCH ($BIT Bit)"
+    echo -e "${YELLOW}Kernel:${NC} $KERNEL"
+    echo -e "${YELLOW}TCP CC:${NC} $TCP_CC"
+    echo -e "${YELLOW}Virtualization:${NC} $VIRT"
+    echo -e "${YELLOW}IPv4/IPv6:${NC} $IPV4_ICON $IPV4_STATUS / $IPV6_ICON $IPV6_STATUS"
+    
+    if [ ! -z "$ORG" ]; then
+        echo -e "${YELLOW}Organization:${NC} $ORG"
+    fi
+    if [ ! -z "$CITY" ] && [ ! -z "$COUNTRY" ]; then
+        echo -e "${YELLOW}Location:${NC} $CITY / $COUNTRY"
+        if [ ! -z "$REGION" ]; then
+            echo -e "${YELLOW}Region:${NC} $REGION"
+        fi
+    fi
+    
+    echo ""
+    echo ""
+    
+    # I/O Speed Test
+    echo -e "${CYAN}I/O Speed Test${NC}"
+    echo "----------------------------------------"
+    
+    # Check if bc is installed
+    if ! command -v bc >/dev/null 2>&1; then
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y bc >/dev/null 2>&1
+    fi
+    
+    # Function to test I/O speed
+    test_io_speed() {
+        local test_file="/tmp/benchmark_io_test_$$"
+        local test_size=1024  # 1GB in MB
+        local output=$(dd if=/dev/zero of="$test_file" bs=1M count=$test_size conv=fdatasync 2>&1)
+        rm -f "$test_file"
+        
+        local speed=$(echo "$output" | tail -1 | awk '{print $(NF-1)}')
+        local unit=$(echo "$output" | tail -1 | awk '{print $NF}')
+        
+        if [ "$unit" = "GB/s" ] || [ "$unit" = "GB/s," ]; then
+            speed=$(echo "$speed * 1024" | bc)
+        fi
+        
+        printf "%.0f" "$speed" 2>/dev/null || echo "0"
+    }
+    
+    echo -e "${YELLOW}Testing I/O speed (this may take a while)...${NC}"
+    IO_SPEED_1=$(test_io_speed)
+    IO_SPEED_2=$(test_io_speed)
+    IO_SPEED_3=$(test_io_speed)
+    
+    IO_AVG=$(echo "scale=1; ($IO_SPEED_1 + $IO_SPEED_2 + $IO_SPEED_3) / 3" | bc)
+    
+    echo -e "${YELLOW}I/O Speed (1st run):${NC} ${GREEN}${IO_SPEED_1} MB/s${NC}"
+    echo -e "${YELLOW}I/O Speed (2nd run):${NC} ${GREEN}${IO_SPEED_2} MB/s${NC}"
+    echo -e "${YELLOW}I/O Speed (3rd run):${NC} ${GREEN}${IO_SPEED_3} MB/s${NC}"
+    echo -e "${YELLOW}I/O Speed (average):${NC} ${GREEN}${IO_AVG} MB/s${NC}"
+    
+    echo ""
+    echo ""
+    
+    # Network Speedtest
+    echo -e "${CYAN}Network Speedtest${NC}"
+    echo "----------------------------------------"
+    
+    # Check if speedtest-cli is installed
+    if ! command -v speedtest-cli >/dev/null 2>&1; then
+        echo -e "${YELLOW}Installing speedtest-cli...${NC}"
+        apt-get update -qq >/dev/null 2>&1
+        apt-get install -y speedtest-cli >/dev/null 2>&1
+    fi
+    
+    # Function to find server by location
+    find_server_by_location() {
+        local location=$1
+        speedtest-cli --list 2>/dev/null | grep -i "$location" | head -1 | awk '{print $1}' | tr -d '.'
+    }
+    
+    # Function to run speedtest
+    run_speedtest() {
+        local server_id=$1
+        local server_name=$2
+        
+        if [ -z "$server_id" ] || [ "$server_id" = "auto" ]; then
+            result=$(timeout 60 speedtest-cli --simple --secure 2>/dev/null)
+        else
+            result=$(timeout 60 speedtest-cli --server $server_id --simple --secure 2>/dev/null)
+        fi
+        
+        if [ $? -eq 0 ] && [ ! -z "$result" ]; then
+            local upload=$(echo "$result" | grep -i Upload | awk '{print $2}')
+            local download=$(echo "$result" | grep -i Download | awk '{print $2}')
+            local ping=$(echo "$result" | grep -i Ping | awk '{print $2}')
+            
+            printf "%-20s %-20s %-20s %-15s\n" "$server_name" "${GREEN}${upload}${NC}" "${RED}${download}${NC}" "${ping}"
+            return 0
+        else
+            printf "%-20s %-20s %-20s %-15s\n" "$server_name" "Failed" "Failed" "Failed"
+            return 1
+        fi
+    }
+    
+    # Print table header
+    printf "%-20s %-20s %-20s %-15s\n" "Node Name" "Upload Speed" "Download Speed" "Latency"
+    echo "------------------------------------------------------------------------"
+    
+    echo -e "${YELLOW}Running network speedtests (this may take a while)...${NC}"
+    echo ""
+    
+    # Default speedtest (auto-select)
+    run_speedtest "" "Speedtest.net"
+    
+    # Try to find and test servers in different locations
+    PARIS_SERVER=$(find_server_by_location "Paris")
+    if [ ! -z "$PARIS_SERVER" ]; then
+        run_speedtest "$PARIS_SERVER" "Paris, FR"
+    else
+        run_speedtest "4817" "Paris, FR" || run_speedtest "21569" "Paris, FR"
+    fi
+    
+    SINGAPORE_SERVER=$(find_server_by_location "Singapore")
+    if [ ! -z "$SINGAPORE_SERVER" ]; then
+        run_speedtest "$SINGAPORE_SERVER" "Singapore, SG"
+    else
+        run_speedtest "7311" "Singapore, SG" || run_speedtest "13623" "Singapore, SG"
+    fi
+    
+    TOKYO_SERVER=$(find_server_by_location "Tokyo")
+    if [ ! -z "$TOKYO_SERVER" ]; then
+        run_speedtest "$TOKYO_SERVER" "Tokyo, JP"
+    else
+        run_speedtest "8438" "Tokyo, JP" || run_speedtest "7510" "Tokyo, JP"
+    fi
+    
+    echo ""
+    
+    # Footer
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+    MINUTES=$((ELAPSED / 60))
+    SECONDS=$((ELAPSED % 60))
+    
+    echo "----------------------------------------"
+    echo -e "${CYAN}Finished in:${NC} ${MINUTES} min ${SECONDS} sec"
+    echo -e "${CYAN}Timestamp:${NC} $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+    echo ""
     echo -e "$LINE"
-    echo -e "${GREEN}CPU        :${NC} $CPU ($CORES cores)"
-    echo -e "${GREEN}Load Avg   :${NC} $LOAD"
-    echo -e "$LINE"
-    echo -e "${BLUE}RAM Used   :${NC} $MEM_USED / $MEM_TOTAL"
-    echo -e "${BLUE}RAM Free   :${NC} $MEM_FREE"
-    echo -e "${BLUE}Disk Used  :${NC} $DISK_USED / $DISK_TOTAL (Avail: $DISK_AVAIL)"
-    echo -e "$LINE"
-    echo -e "${MAGENTA}IPv4       :${NC} $IPV4"
-    echo -e "${MAGENTA}IPv6       :${NC} $IPV6"
-    echo -e "${MAGENTA}Public IP  :${NC} $PUBLIC_IP"
-    echo -e "$LINE"
-    echo -e "${CYAN}User       :${NC} $USER ($LOGGED_USERS logged in)"
-    echo -e "${CYAN}Last Login :${NC} $LAST_LOGIN"
-    echo -e "$LINE"
-    echo -e "${CYAN}Tanggal    :${NC} $(date)"
-    echo -e "$LINE"
-    echo -e "${GREEN}Tips:${NC} Gunakan VPS ini dengan bijak dan selalu cek resource!"
-    echo -e "$LINE"
+    read -p "Tekan Enter untuk kembali ke menu... "
 }
 
 show_webserver_info() {
