@@ -66,8 +66,16 @@ show_general_info() {
     # IPv4/IPv6 Status
     IPV4_STATUS=$(ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1 && echo "Online" || echo "Offline")
     IPV6_STATUS=$(ping6 -c 1 -W 2 2001:4860:4860::8888 >/dev/null 2>&1 && echo "Online" || echo "Offline")
-    IPV4_ICON=$([ "$IPV4_STATUS" = "Online" ] && echo "${GREEN}✓${NC}" || echo "${RED}✗${NC}")
-    IPV6_ICON=$([ "$IPV6_STATUS" = "Online" ] && echo "${GREEN}✓${NC}" || echo "${RED}✗${NC}")
+    if [ "$IPV4_STATUS" = "Online" ]; then
+        IPV4_ICON="${GREEN}✓${NC}"
+    else
+        IPV4_ICON="${RED}✗${NC}"
+    fi
+    if [ "$IPV6_STATUS" = "Online" ]; then
+        IPV6_ICON="${GREEN}✓${NC}"
+    else
+        IPV6_ICON="${RED}✗${NC}"
+    fi
     
     # IP Info (Organization & Location)
     ORG=""
@@ -102,16 +110,16 @@ show_general_info() {
     
     # AES-NI Check
     if grep -q "^flags.*aes" /proc/cpuinfo; then
-        printf "${GREEN}%-18s${NC} %s\n" "✓ AES-NI:" "Enabled"
+        printf "${YELLOW}%-18s${NC} ${GREEN}✓${NC} %s\n" "AES-NI:" "Enabled"
     else
-        printf "${RED}%-18s${NC} %s\n" "✗ AES-NI:" "Disabled"
+        printf "${YELLOW}%-18s${NC} ${RED}✗${NC} %s\n" "AES-NI:" "Disabled"
     fi
     
     # VM-x/AMD-V Check
     if grep -q "^flags.*vmx\|^flags.*svm" /proc/cpuinfo; then
-        printf "${GREEN}%-18s${NC} %s\n" "✓ VM-x/AMD-V:" "Enabled"
+        printf "${YELLOW}%-18s${NC} ${GREEN}✓${NC} %s\n" "VM-x/AMD-V:" "Enabled"
     else
-        printf "${RED}%-18s${NC} %s\n" "✗ VM-x/AMD-V:" "Disabled"
+        printf "${YELLOW}%-18s${NC} ${RED}✗${NC} %s\n" "VM-x/AMD-V:" "Disabled"
     fi
     
     printf "${YELLOW}%-18s${NC} %s (%s Used)\n" "Total Disk:" "$DISK_TOTAL" "$DISK_USED"
@@ -123,7 +131,16 @@ show_general_info() {
     printf "${YELLOW}%-18s${NC} %s\n" "Kernel:" "$KERNEL"
     printf "${YELLOW}%-18s${NC} %s\n" "TCP CC:" "$TCP_CC"
     printf "${YELLOW}%-18s${NC} %s\n" "Virtualization:" "$VIRT"
-    printf "${YELLOW}%-18s${NC} %s %s / %s %s\n" "IPv4/IPv6:" "$IPV4_ICON" "$IPV4_STATUS" "$IPV6_ICON" "$IPV6_STATUS"
+    # Format IPv4/IPv6 dengan icon yang benar
+    if [ "$IPV4_STATUS" = "Online" ] && [ "$IPV6_STATUS" = "Online" ]; then
+        printf "${YELLOW}%-18s${NC} ${GREEN}✓${NC} %s / ${GREEN}✓${NC} %s\n" "IPv4/IPv6:" "$IPV4_STATUS" "$IPV6_STATUS"
+    elif [ "$IPV4_STATUS" = "Online" ]; then
+        printf "${YELLOW}%-18s${NC} ${GREEN}✓${NC} %s / ${RED}✗${NC} %s\n" "IPv4/IPv6:" "$IPV4_STATUS" "$IPV6_STATUS"
+    elif [ "$IPV6_STATUS" = "Online" ]; then
+        printf "${YELLOW}%-18s${NC} ${RED}✗${NC} %s / ${GREEN}✓${NC} %s\n" "IPv4/IPv6:" "$IPV4_STATUS" "$IPV6_STATUS"
+    else
+        printf "${YELLOW}%-18s${NC} ${RED}✗${NC} %s / ${RED}✗${NC} %s\n" "IPv4/IPv6:" "$IPV4_STATUS" "$IPV6_STATUS"
+    fi
     
     if [ ! -z "$ORG" ]; then
         printf "${YELLOW}%-18s${NC} %s\n" "Organization:" "$ORG"
@@ -141,6 +158,7 @@ show_general_info() {
     # I/O Speed Test
     echo -e "${CYAN}I/O Speed Test${NC}"
     echo "----------------------------------------"
+    echo ""
     
     # Check if bc is installed
     if ! command -v bc >/dev/null 2>&1; then
@@ -165,7 +183,7 @@ show_general_info() {
         printf "%.0f" "$speed" 2>/dev/null || echo "0"
     }
     
-    echo -e "${YELLOW}Testing I/O speed (this may take a while)...${NC}"
+    printf "${YELLOW}%-18s${NC} %s\n" "Testing I/O speed:" "(this may take a while...)"
     IO_SPEED_1=$(test_io_speed)
     IO_SPEED_2=$(test_io_speed)
     IO_SPEED_3=$(test_io_speed)
@@ -183,6 +201,7 @@ show_general_info() {
     # Network Speedtest
     echo -e "${CYAN}Network Speedtest${NC}"
     echo "----------------------------------------"
+    echo ""
     
     # Check if speedtest-cli is installed
     if ! command -v speedtest-cli >/dev/null 2>&1; then
@@ -232,7 +251,11 @@ show_general_info() {
             local ping=$(echo "$result" | grep -i Ping | awk '{print $2}')
             
             if [ ! -z "$upload" ] && [ ! -z "$download" ] && [ ! -z "$ping" ]; then
-                printf "%-20s %-20s %-20s %-15s\n" "$server_name" "${GREEN}${upload}${NC}" "${RED}${download}${NC}" "${ping}"
+                # Format dengan printf untuk alignment yang benar
+                printf "%-20s" "$server_name"
+                printf " ${GREEN}%-19s${NC}" "${upload} Mbps"
+                printf " ${RED}%-19s${NC}" "${download} Mbps"
+                printf " %-15s\n" "${ping} ms"
                 return 0
             fi
         fi
@@ -241,11 +264,11 @@ show_general_info() {
         return 1
     }
     
-    # Print table header
-    printf "%-20s %-20s %-20s %-15s\n" "Node Name" "Upload Speed" "Download Speed" "Latency"
+    # Print table header with consistent format
+    printf "${YELLOW}%-20s${NC} ${YELLOW}%-20s${NC} ${YELLOW}%-20s${NC} ${YELLOW}%-15s${NC}\n" "Node Name:" "Upload Speed:" "Download Speed:" "Latency:"
     echo "------------------------------------------------------------------------"
     
-    echo -e "${YELLOW}Running network speedtests (this may take a while)...${NC}"
+    printf "${YELLOW}%-18s${NC} %s\n" "Running speedtests:" "(this may take a while...)"
     echo ""
     
     # Default speedtest (auto-select best server)
