@@ -957,6 +957,34 @@ configure_nodejs_systemd() {
     echo "2. Next.js"
     read -p "Pilihan [1-2]: " app_type
     
+    # Pilih package manager
+    echo ""
+    echo "Pilih package manager:"
+    echo "1. npm"
+    echo "2. bun"
+    read -p "Pilihan [1-2]: " pm_choice
+    
+    case $pm_choice in
+        1)
+            package_manager="npm"
+            ;;
+        2)
+            package_manager="bun"
+            ;;
+        *)
+            log_error "Pilihan package manager tidak valid!"
+            return
+            ;;
+    esac
+    
+    # Cek apakah package manager tersedia
+    if ! command -v $package_manager >/dev/null 2>&1; then
+        log_error "$package_manager tidak ditemukan! Install $package_manager terlebih dahulu."
+        return 1
+    fi
+    
+    pm_path=$(which $package_manager)
+    
     case $app_type in
         1)
             # Node.js biasa
@@ -966,18 +994,44 @@ configure_nodejs_systemd() {
                 return
             fi
             read -p "Masukkan nama service systemd (misal: api-pegawai): " service_name
-            read -p "Masukkan nama file entry point (default: server.js): " entry_point
-            entry_point=${entry_point:-server.js}
+            
+            # Tanya apakah menggunakan npm/bun run atau node langsung
+            echo ""
+            echo "Pilih cara menjalankan aplikasi:"
+            echo "1. Menggunakan $package_manager run (dari package.json)"
+            echo "2. Menggunakan node langsung (file entry point)"
+            read -p "Pilihan [1-2]: " run_method
+            
+            if [ "$run_method" = "1" ]; then
+                # Menggunakan npm/bun run
+                read -p "Masukkan script name dari package.json (default: start): " script_name
+                script_name=${script_name:-start}
+                
+                # Cek apakah package.json ada
+                if [ ! -f "$app_path/package.json" ]; then
+                    log_error "File package.json tidak ditemukan di $app_path"
+                    return 1
+                fi
+                
+                exec_start="$pm_path run $script_name"
+            else
+                # Menggunakan node langsung
+                read -p "Masukkan nama file entry point (default: server.js): " entry_point
+                entry_point=${entry_point:-server.js}
+                
+                # Cek apakah node tersedia
+                if ! command -v node >/dev/null 2>&1; then
+                    log_error "Node.js tidak ditemukan! Install Node.js terlebih dahulu."
+                    return 1
+                fi
+                
+                node_path=$(which node)
+                exec_start="$node_path $entry_point"
+            fi
+            
             read -p "Jalankan sebagai user apa? (default: www-data): " run_user
             run_user=${run_user:-www-data}
             
-            # Cek apakah node tersedia
-            if ! command -v node >/dev/null 2>&1; then
-                log_error "Node.js tidak ditemukan! Install Node.js terlebih dahulu."
-                return 1
-            fi
-            
-            node_path=$(which node)
             service_file="/etc/systemd/system/${service_name}.service"
             cat > "$service_file" <<EOF
 [Unit]
@@ -987,7 +1041,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$app_path
-ExecStart=$node_path $entry_point
+ExecStart=$exec_start
 Restart=always
 User=$run_user
 Environment=NODE_ENV=production
@@ -1029,13 +1083,6 @@ EOF
                 fi
             fi
             
-            # Cek apakah npm tersedia
-            if ! command -v npm >/dev/null 2>&1; then
-                log_error "npm tidak ditemukan! Install Node.js dan npm terlebih dahulu."
-                return 1
-            fi
-            
-            npm_path=$(which npm)
             service_file="/etc/systemd/system/${service_name}.service"
             
             # Buat file service dengan format sesuai kebutuhan
@@ -1049,7 +1096,7 @@ After=network.target
 Type=simple
 User=$run_user
 WorkingDirectory=$app_path
-ExecStart=$npm_path start
+ExecStart=$pm_path run start
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
@@ -1068,7 +1115,7 @@ After=network.target
 Type=simple
 User=$run_user
 WorkingDirectory=$app_path
-ExecStart=$npm_path start
+ExecStart=$pm_path run start
 Restart=always
 RestartSec=10
 Environment=NODE_ENV=production
@@ -1077,7 +1124,7 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 EOF
             fi
-            log_info "Pastikan aplikasi Next.js sudah di-build (npm run build) sebelum menjalankan service!"
+            log_info "Pastikan aplikasi Next.js sudah di-build ($package_manager run build) sebelum menjalankan service!"
             ;;
         *)
             log_error "Pilihan tidak valid!"

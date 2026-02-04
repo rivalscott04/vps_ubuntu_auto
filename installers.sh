@@ -311,10 +311,12 @@ install_phpmyadmin() {
 
     # Generate blowfish secret
     blowfish_secret=$(openssl rand -base64 32)
+    # Escape karakter yang bisa mengacaukan perintah sed (/, &)
+    escaped_blowfish_secret=$(printf '%s\n' "$blowfish_secret" | sed -e 's/[\/&]/\\&/g')
 
     # Konfigurasi phpMyAdmin
     cp "${pma_path}/config.sample.inc.php" "${pma_path}/config.inc.php"
-    sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '$blowfish_secret'/" "${pma_path}/config.inc.php"
+    sed -i "s/\$cfg\['blowfish_secret'\] = ''/\$cfg\['blowfish_secret'\] = '$escaped_blowfish_secret'/" "${pma_path}/config.inc.php"
 
     # Konfigurasi Nginx
     nginx_conf="/etc/nginx/sites-available/${domain_name}"
@@ -488,17 +490,8 @@ EOF
                 log_info "Untuk me-restart Nginx, jalankan: sudo systemctl restart nginx"
             fi
 
-            # Tambahkan: Tawarkan instalasi SSL Certbot
-            read -p "Ingin mengaktifkan SSL gratis (Let's Encrypt) untuk domain ${domain_name}? (y/n): " enable_ssl
-            if [ "$enable_ssl" = "y" ]; then
-                log_info "Menginstal certbot dan plugin nginx..."
-                safe_apt_update && safe_apt_install -y certbot python3-certbot-nginx
-                log_info "Menjalankan certbot untuk domain ${domain_name}..."
-                certbot --nginx -d ${domain_name} --non-interactive --agree-tos -m admin@${domain_name} || log_warning "Certbot gagal, cek log untuk detail."
-                inject_nginx_ssl_block "${domain_name}" "$nginx_conf"
-                systemctl reload nginx
-                log_info "SSL Let's Encrypt telah diaktifkan untuk https://${domain_name}"
-            fi
+            # Info: SSL dikelola dari menu terpisah
+            log_info "Jika ingin mengaktifkan SSL (Let's Encrypt), gunakan menu konfigurasi SSL terpisah setelah instalasi phpMyAdmin selesai."
         else
             # Remove symlink if exists
             if [ -f "/etc/nginx/sites-enabled/${domain_name}" ]; then
@@ -524,17 +517,9 @@ EOF
     if [ "$use_subdomain" = true ]; then
         log_info "Instalasi phpMyAdmin dengan subdomain selesai!"
         log_info "Akses phpMyAdmin di: http://${domain_name}"
-
-        if [ "$use_ssl" = "y" ]; then
-            log_info "Atau dengan HTTPS: https://${domain_name}"
-        fi
     else
         log_info "Instalasi phpMyAdmin dengan subfolder selesai!"
         log_info "Akses phpMyAdmin di: http://${domain_name}/${pma_folder}"
-
-        if [ "$use_ssl" = "y" ]; then
-            log_info "Atau dengan HTTPS: https://${domain_name}/${pma_folder}"
-        fi
     fi
 
     # Tambahkan substitusi untuk DOMAIN_NAME
@@ -560,6 +545,31 @@ EOF
 }
 
 install_nodejs() {
+    log_info "Pilih runtime JavaScript yang ingin diinstall..."
+    echo "1. Node.js + npm"
+    echo "2. Bun"
+    echo "3. Keduanya (Node.js + Bun)"
+    read -p "Pilihan [1-3]: " js_choice
+
+    case "$js_choice" in
+        1)
+            _install_nodejs_npm
+            ;;
+        2)
+            _install_bun_runtime
+            ;;
+        3)
+            _install_nodejs_npm
+            _install_bun_runtime
+            ;;
+        *)
+            log_warning "Pilihan tidak valid, default ke instalasi Node.js + npm saja."
+            _install_nodejs_npm
+            ;;
+    esac
+}
+
+_install_nodejs_npm() {
     log_info "Mempersiapkan instalasi Node.js dan npm..."
     check_and_install_package curl
 
@@ -590,6 +600,32 @@ install_nodejs() {
         log_info "Package global yang terinstall: pm2, yarn"
     else
         log_error "Gagal menginstal Node.js dan npm"
+    fi
+}
+
+_install_bun_runtime() {
+    log_info "Mempersiapkan instalasi Bun..."
+    check_and_install_package curl
+
+    # Tentukan direktori instalasi Bun (default /usr/local/bun)
+    local bun_install_dir="${BUN_INSTALL:-/usr/local/bun}"
+    export BUN_INSTALL="$bun_install_dir"
+
+    log_info "Mengunduh dan menginstal Bun..."
+    curl -fsSL https://bun.sh/install | bash -
+
+    # Pastikan binary Bun dapat diakses secara global
+    if [ -x "$bun_install_dir/bin/bun" ]; then
+        ln -sf "$bun_install_dir/bin/bun" /usr/local/bin/bun
+    elif [ -x "$HOME/.bun/bin/bun" ]; then
+        ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun
+    fi
+
+    if command -v bun > /dev/null 2>&1; then
+        bun_version=$(bun --version)
+        log_info "Bun ${bun_version} berhasil diinstall!"
+    else
+        log_error "Gagal menginstal Bun. Silakan cek log di atas atau coba ulangi instalasi secara manual."
     fi
 }
 
