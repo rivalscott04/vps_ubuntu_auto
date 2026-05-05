@@ -6,56 +6,66 @@ run_preflight_check() {
     local app_port="$3"
     local failed=0
 
-    echo "=== Preflight Check ==="
+    ui_section "Preflight Check"
     beginner_note "Cek ini mencegah gagal setup di tengah jalan."
 
+    ui_step 1 6 "Cek kompatibilitas OS"
     if [ -f /etc/os-release ]; then
         . /etc/os-release
         if [[ "$ID" != "ubuntu" ]]; then
-            log_warning "OS terdeteksi $ID. Script paling diuji di Ubuntu."
+            echo "$(ui_badge WARN) OS terdeteksi $ID. Script paling diuji di Ubuntu."
         else
-            log_info "OS compatibility: OK ($PRETTY_NAME)"
+            echo "$(ui_badge OK) OS compatibility: $PRETTY_NAME"
         fi
     fi
 
+    ui_step 2 6 "Cek RAM"
     local mem_mb
     mem_mb=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo 2>/dev/null)
     if [ -n "$mem_mb" ] && [ "$mem_mb" -lt 900 ]; then
-        log_warning "RAM rendah (${mem_mb}MB). Disarankan >= 1GB."
+        echo "$(ui_badge WARN) RAM rendah (${mem_mb}MB). Disarankan >= 1GB."
     else
-        log_info "RAM check: OK (${mem_mb}MB)"
+        echo "$(ui_badge OK) RAM check: ${mem_mb}MB"
     fi
 
+    ui_step 3 6 "Cek ruang disk"
     local free_mb
     free_mb=$(df -Pm / | awk 'NR==2 {print $4}')
     if [ -n "$free_mb" ] && [ "$free_mb" -lt 2048 ]; then
-        log_warning "Disk free rendah (${free_mb}MB). Disarankan >= 2GB."
+        echo "$(ui_badge FAIL) Disk free rendah (${free_mb}MB). Disarankan >= 2GB."
         failed=1
     else
-        log_info "Disk check: OK (${free_mb}MB free)"
+        echo "$(ui_badge OK) Disk check: ${free_mb}MB free"
     fi
 
+    ui_step 4 6 "Cek path aplikasi"
     if [ ! -d "$app_path" ]; then
-        log_error "Path aplikasi tidak ada: $app_path"
+        echo "$(ui_badge FAIL) Path aplikasi tidak ada: $app_path"
         failed=1
     else
-        log_info "Path check: OK ($app_path)"
+        echo "$(ui_badge OK) Path check: $app_path"
     fi
 
+    ui_step 5 6 "Cek konflik port (opsional)"
     if [ -n "$app_port" ]; then
         if ss -ltn 2>/dev/null | awk '{print $4}' | rg -n ":${app_port}$" >/dev/null 2>&1; then
-            log_warning "Port $app_port sudah dipakai proses lain."
+            echo "$(ui_badge WARN) Port $app_port sudah dipakai proses lain."
         else
-            log_info "Port check: OK ($app_port available)"
+            echo "$(ui_badge OK) Port check: $app_port available"
         fi
+    else
+        echo "$(ui_badge INFO) Port check dilewati (tidak relevan)."
     fi
 
+    ui_step 6 6 "Cek DNS domain"
     if [ -n "$domain" ]; then
         if getent hosts "$domain" >/dev/null 2>&1; then
-            log_info "DNS resolve: OK ($domain)"
+            echo "$(ui_badge OK) DNS resolve: $domain"
         else
-            log_warning "DNS belum resolve untuk $domain. Lanjut boleh, tapi SSL bisa gagal."
+            echo "$(ui_badge WARN) DNS belum resolve untuk $domain. SSL bisa gagal."
         fi
+    else
+        echo "$(ui_badge INFO) DNS check dilewati (domain kosong)."
     fi
 
     return $failed
@@ -200,36 +210,101 @@ quick_setup_wizard() {
 
 health_check_app() {
     local domain app_path php_version
-    echo "=== Cek Aplikasi Saya ==="
+    local nginx_state php_state db_state ssl_state
+    local ok_count=0 warn_count=0 fail_count=0
+    ui_section "Cek Aplikasi Saya"
     read -r -p "Masukkan domain aplikasi: " domain
     read -r -p "Masukkan path aplikasi (opsional): " app_path
 
     php_version=$(detect_installed_php_version)
-    echo "- Nginx: $(systemctl is-active nginx 2>/dev/null || echo inactive)"
+    echo "Memeriksa komponen, mohon tunggu..."
+    ui_step 1 5 "Cek service Nginx"
+
+    nginx_state=$(systemctl is-active nginx 2>/dev/null || echo inactive)
+    ui_step 2 5 "Cek service PHP-FPM"
+    php_state="unknown"
     if [ -n "$php_version" ]; then
-        echo "- PHP-FPM (${php_version}): $(systemctl is-active php${php_version}-fpm 2>/dev/null || echo inactive)"
+        php_state=$(systemctl is-active "php${php_version}-fpm" 2>/dev/null || echo inactive)
     fi
-    echo "- DB MySQL/MariaDB: $(systemctl is-active mysql 2>/dev/null || systemctl is-active mariadb 2>/dev/null || echo inactive)"
-    echo "- SSL cert: $([ -d "/etc/letsencrypt/live/${domain}" ] && echo OK || echo belum)"
+    ui_step 3 5 "Cek service database"
+    db_state=$(systemctl is-active mysql 2>/dev/null || systemctl is-active mariadb 2>/dev/null || echo inactive)
+    ui_step 4 5 "Cek sertifikat SSL"
+    ssl_state=$([ -d "/etc/letsencrypt/live/${domain}" ] && echo "present" || echo "missing")
+    ui_step 5 5 "Cek config limit Nginx"
+
+    ui_section "Status Layanan"
+    if [ "$nginx_state" = "active" ]; then
+        echo "$(ui_badge OK)   Nginx               : active"
+        ok_count=$((ok_count+1))
+    else
+        echo "$(ui_badge FAIL) Nginx               : $nginx_state"
+        fail_count=$((fail_count+1))
+    fi
+
+    if [ -n "$php_version" ]; then
+        if [ "$php_state" = "active" ]; then
+            echo "$(ui_badge OK)   PHP-FPM (${php_version})   : active"
+            ok_count=$((ok_count+1))
+        else
+            echo "$(ui_badge FAIL) PHP-FPM (${php_version})   : $php_state"
+            fail_count=$((fail_count+1))
+        fi
+    else
+        echo "$(ui_badge WARN) PHP-FPM             : versi PHP tidak terdeteksi"
+        warn_count=$((warn_count+1))
+    fi
+
+    if [ "$db_state" = "active" ]; then
+        echo "$(ui_badge OK)   DB MySQL/MariaDB    : active"
+        ok_count=$((ok_count+1))
+    else
+        echo "$(ui_badge WARN) DB MySQL/MariaDB    : $db_state"
+        warn_count=$((warn_count+1))
+    fi
+
+    if [ "$ssl_state" = "present" ]; then
+        echo "$(ui_badge OK)   SSL Cert            : ditemukan"
+        ok_count=$((ok_count+1))
+    else
+        echo "$(ui_badge WARN) SSL Cert            : belum ada"
+        warn_count=$((warn_count+1))
+    fi
 
     local conf="/etc/nginx/sites-available/${domain}"
     [ -f "$conf" ] || conf="/etc/nginx/sites-enabled/${domain}"
     if [ -f "$conf" ]; then
         local body_limit
         body_limit=$(rg -n "client_max_body_size" "$conf" -o 2>/dev/null | awk '{print $2}' | tail -n1)
-        echo "- Nginx client_max_body_size: ${body_limit:-tidak diset (default 1M)}"
+        echo "$(ui_badge INFO) client_max_body_size: ${body_limit:-tidak diset (default 1M)}"
     fi
 
     if [ -n "$app_path" ] && [ -f "$app_path/artisan" ]; then
         if [ -d "$app_path/storage" ] && [ ! -w "$app_path/storage" ]; then
-            echo "- Probable issue: permission storage Laravel"
+            echo "$(ui_badge WARN) Laravel storage tidak writable, kemungkinan issue permission."
+            warn_count=$((warn_count+1))
         fi
     fi
 
-    echo "- Diagnosa cepat:"
-    echo "  * Jika error 413: naikkan client_max_body_size + post_max_size + upload_max_filesize"
-    echo "  * Jika error 502: cek service app/PHP-FPM dan socket/port mismatch"
-    echo "  * Jika error 500 Laravel: cek permission storage/bootstrap/cache"
+    ui_section "Ringkasan Health Check"
+    echo "OK: $ok_count | WARN: $warn_count | FAIL: $fail_count"
+    echo
+    echo "Pilih aksi lanjut:"
+    echo "1) Lihat diagnosa cepat"
+    echo "2) Jalankan auto-fix sekarang"
+    echo "0) Kembali"
+    read -r -p "Pilihan [0-2]: " next_action
+    case "$next_action" in
+        1)
+            echo "- Jika error 413: naikkan client_max_body_size + post_max_size + upload_max_filesize"
+            echo "- Jika error 502: cek service app/PHP-FPM dan socket/port mismatch"
+            echo "- Jika error 500 Laravel: cek permission storage/bootstrap/cache"
+            ;;
+        2)
+            auto_fix_common
+            ;;
+        0) ;;
+        *) log_warning "Pilihan tidak valid, kembali ke menu." ;;
+    esac
 }
 
 auto_fix_common() {

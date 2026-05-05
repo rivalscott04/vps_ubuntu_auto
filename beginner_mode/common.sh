@@ -2,6 +2,32 @@
 
 LEARNING_MODE=${LEARNING_MODE:-0}
 
+ui_badge() {
+    local level="$1"
+    case "$level" in
+        OK)   echo -e "\033[0;32m[OK]\033[0m" ;;
+        WARN) echo -e "\033[1;33m[WARN]\033[0m" ;;
+        FAIL) echo -e "\033[0;31m[FAIL]\033[0m" ;;
+        INFO) echo -e "\033[0;36m[INFO]\033[0m" ;;
+        *)    echo "[$level]" ;;
+    esac
+}
+
+ui_section() {
+    local title="$1"
+    echo
+    echo "========================================="
+    echo " $title"
+    echo "========================================="
+}
+
+ui_step() {
+    local current="$1"
+    local total="$2"
+    local label="$3"
+    echo -e "\033[0;36m[$current/$total]\033[0m $label"
+}
+
 beginner_note() {
     local msg="$1"
     if [ "$LEARNING_MODE" = "1" ]; then
