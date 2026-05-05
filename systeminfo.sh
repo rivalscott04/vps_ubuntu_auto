@@ -210,24 +210,21 @@ show_general_info() {
         apt-get install -y speedtest-cli >/dev/null 2>&1
     fi
     
-    # Function to find server by location
-    find_server_by_location() {
-        local location=$1
-        # Get server list and find by location name
-        local server_list=$(speedtest-cli --list 2>/dev/null)
+    # Function to find up to N server IDs by location keyword
+    # Output: newline-separated IDs
+    find_servers_by_location() {
+        local keyword="$1"
+        local limit="${2:-5}"
+        local server_list
+        server_list=$(speedtest-cli --list 2>/dev/null)
         if [ -z "$server_list" ]; then
-            echo ""
             return
         fi
-        
-        # Try to find server - format: "ID) Server Name (Location)"
-        local found=$(echo "$server_list" | grep -i "$location" | head -1)
-        if [ ! -z "$found" ]; then
-            # Extract server ID (number before closing parenthesis)
-            echo "$found" | sed -n 's/^[[:space:]]*\([0-9]*\))[[:space:]].*/\1/p' | head -1
-        else
-            echo ""
-        fi
+
+        echo "$server_list" \
+            | awk -v kw="$keyword" 'BEGIN{IGNORECASE=1} index($0, kw) > 0 {print}' \
+            | sed -n 's/^[[:space:]]*\([0-9]\+\)).*/\1/p' \
+            | head -n "$limit"
     }
     
     # Function to run speedtest
@@ -263,6 +260,39 @@ show_general_info() {
         printf "%-20s %-20s %-20s %-15s\n" "$server_name" "Failed" "Failed" "Failed"
         return 1
     }
+
+    # Function to run speedtest by location with robust fallback
+    run_speedtest_by_location() {
+        local label="$1"
+        shift
+        local keywords=("$@")
+        local ids=""
+        local kw id
+
+        # Build candidate IDs from multiple keywords (city/country)
+        for kw in "${keywords[@]}"; do
+            [ -z "$kw" ] && continue
+            local found_ids
+            found_ids=$(find_servers_by_location "$kw" 4)
+            if [ -n "$found_ids" ]; then
+                ids="${ids}"$'\n'"${found_ids}"
+            fi
+        done
+
+        # Deduplicate candidate IDs
+        if [ -n "$ids" ]; then
+            ids=$(echo "$ids" | awk 'NF && !seen[$0]++')
+            while IFS= read -r id; do
+                [ -z "$id" ] && continue
+                if run_speedtest "$id" "$label"; then
+                    return 0
+                fi
+            done <<< "$ids"
+        fi
+
+        # Last fallback: auto server (still print requested label)
+        run_speedtest "" "$label"
+    }
     
     # Print table header with consistent format
     printf "${YELLOW}%-20s${NC} ${YELLOW}%-20s${NC} ${YELLOW}%-20s${NC} ${YELLOW}%-15s${NC}\n" "Node Name:" "Upload Speed:" "Download Speed:" "Latency:"
@@ -274,45 +304,11 @@ show_general_info() {
     # Default speedtest (auto-select best server)
     run_speedtest "" "Speedtest.net"
     
-    # Try to find and test servers in different locations
-    # Paris, France
-    PARIS_SERVER=$(find_server_by_location "Paris")
-    if [ ! -z "$PARIS_SERVER" ] && [ "$PARIS_SERVER" != "" ]; then
-        run_speedtest "$PARIS_SERVER" "Paris, FR"
-    else
-        # Try known server IDs for Paris
-        for server_id in 4817 21569 16348 16349; do
-            if run_speedtest "$server_id" "Paris, FR"; then
-                break
-            fi
-        done
-    fi
-    
-    # Singapore
-    SINGAPORE_SERVER=$(find_server_by_location "Singapore")
-    if [ ! -z "$SINGAPORE_SERVER" ] && [ "$SINGAPORE_SERVER" != "" ]; then
-        run_speedtest "$SINGAPORE_SERVER" "Singapore, SG"
-    else
-        # Try known server IDs for Singapore
-        for server_id in 7311 13623 13624 13625; do
-            if run_speedtest "$server_id" "Singapore, SG"; then
-                break
-            fi
-        done
-    fi
-    
-    # Tokyo, Japan
-    TOKYO_SERVER=$(find_server_by_location "Tokyo")
-    if [ ! -z "$TOKYO_SERVER" ] && [ "$TOKYO_SERVER" != "" ]; then
-        run_speedtest "$TOKYO_SERVER" "Tokyo, JP"
-    else
-        # Try known server IDs for Tokyo
-        for server_id in 8438 7510 7511 7512; do
-            if run_speedtest "$server_id" "Tokyo, JP"; then
-                break
-            fi
-        done
-    fi
+    # Try test servers in different locations (with fallback by keyword)
+    run_speedtest_by_location "Paris, FR" "Paris" "France"
+    run_speedtest_by_location "Singapore, SG" "Singapore"
+    run_speedtest_by_location "Jakarta, ID" "Jakarta" "Indonesia"
+    run_speedtest_by_location "Tokyo, JP" "Tokyo" "Japan"
     
     echo ""
     
