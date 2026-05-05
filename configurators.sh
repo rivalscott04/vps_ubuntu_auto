@@ -950,6 +950,48 @@ check_installed_php_extensions() {
 }
 
 # === Konfigurasi systemd untuk Node.js ===
+systemd_preflight_check() {
+    local service_name="$1"
+    local run_user="$2"
+    local app_path="$3"
+    local exec_bin="$4"
+
+    if [ -z "$service_name" ]; then
+        log_error "Nama service tidak boleh kosong."
+        return 1
+    fi
+    if [ -z "$run_user" ] || ! id "$run_user" >/dev/null 2>&1; then
+        log_error "User '$run_user' tidak valid/tidak ditemukan."
+        return 1
+    fi
+    if [ -z "$app_path" ] || [ ! -d "$app_path" ]; then
+        log_error "Working directory tidak ditemukan: $app_path"
+        return 1
+    fi
+    if [ -z "$exec_bin" ] || [ ! -x "$exec_bin" ]; then
+        log_error "Executable tidak valid/tidak executable: $exec_bin"
+        return 1
+    fi
+    return 0
+}
+
+systemd_postcheck_summary() {
+    local service_name="$1"
+    echo
+    log_info "=== SYSTEMD POST-CHECK ==="
+    if systemctl is-active --quiet "$service_name"; then
+        log_info "Service '$service_name' status: active"
+    else
+        log_error "Service '$service_name' status: failed/inactive"
+        echo "Hint cepat:"
+        echo "1) Cek detail unit   : sudo systemctl status $service_name --no-pager"
+        echo "2) Cek log 50 baris  : sudo journalctl -u $service_name -n 50 --no-pager"
+        echo "3) Restart service   : sudo systemctl restart $service_name"
+    fi
+    echo "Debug command siap pakai:"
+    echo "sudo journalctl -u $service_name -n 50 --no-pager"
+}
+
 configure_nodejs_systemd() {
     echo "=== Konfigurasi systemd untuk Node.js/Next.js ==="
     echo "Pilih jenis aplikasi:"
@@ -1036,17 +1078,19 @@ configure_nodejs_systemd() {
             cat > "$service_file" <<EOF
 [Unit]
 Description=Node.js App ($service_name)
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=$app_path
 ExecStart=$exec_start
 Restart=always
+RestartSec=5
 User=$run_user
 Environment=NODE_ENV=production
-StandardOutput=append:$app_path/app.log
-StandardError=append:$app_path/app.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -1090,7 +1134,8 @@ EOF
                 cat > "$service_file" <<EOF
 [Unit]
 Description=Next.js $service_name
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1109,7 +1154,8 @@ EOF
                 cat > "$service_file" <<EOF
 [Unit]
 Description=Next.js $service_name
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1131,18 +1177,26 @@ EOF
             return
             ;;
     esac
-    
+
+    exec_bin=$(echo "$exec_start" | awk '{print $1}')
+    if ! systemd_preflight_check "$service_name" "$run_user" "$app_path" "$exec_bin"; then
+        log_error "Preflight systemd gagal. Service tidak dibuat."
+        return 1
+    fi
+
     systemctl daemon-reload
     systemctl enable "$service_name"
     systemctl restart "$service_name"
     log_info "Service systemd $service_name berhasil dibuat dan dijalankan!"
     echo "Cek status: sudo systemctl status $service_name"
-    echo "Lihat log: tail -f $app_path/app.log"
+    echo "Lihat log: sudo journalctl -u $service_name -f"
+    systemd_postcheck_summary "$service_name"
 } 
 
 # === Konfigurasi systemd untuk Python ===
 configure_python_systemd() {
     echo "=== Konfigurasi systemd untuk Aplikasi Python ==="
+    local app_path="" service_name="" run_user="" python_exec="" gunicorn_exec="" exec_bin=""
     echo "Pilih jenis aplikasi:"
     echo "1. Script Python biasa (.py)"
     echo "2. Flask/FastAPI (dengan gunicorn)"
@@ -1219,7 +1273,8 @@ configure_python_systemd() {
             cat > "$service_file" <<EOF
 [Unit]
 Description=Python App ($service_name)
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1229,8 +1284,8 @@ Restart=always
 RestartSec=10
 User=$run_user
 $(echo -e "$env_vars")
-StandardOutput=append:$app_path/${service_name}.log
-StandardError=append:$app_path/${service_name}.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -1307,7 +1362,8 @@ EOF
             cat > "$service_file" <<EOF
 [Unit]
 Description=Gunicorn instance for $service_name
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1317,8 +1373,8 @@ Restart=always
 RestartSec=10
 User=$run_user
 $(echo -e "$env_vars")
-StandardOutput=append:$app_path/${service_name}.log
-StandardError=append:$app_path/${service_name}.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -1409,7 +1465,8 @@ EOF
             cat > "$service_file" <<EOF
 [Unit]
 Description=Gunicorn instance for Django $service_name
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1419,8 +1476,8 @@ Restart=always
 RestartSec=10
 User=$run_user
 $(echo -e "$env_vars")
-StandardOutput=append:$app_path/${service_name}.log
-StandardError=append:$app_path/${service_name}.log
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -1435,6 +1492,16 @@ EOF
             ;;
     esac
     
+    # Preflight sebelum reload/start service
+    exec_bin=$(echo "$python_exec" | awk '{print $1}')
+    if [ -n "$gunicorn_exec" ]; then
+        exec_bin=$(echo "$gunicorn_exec" | awk '{print $1}')
+    fi
+    if ! systemd_preflight_check "$service_name" "$run_user" "$app_path" "$exec_bin"; then
+        log_error "Preflight systemd gagal. Service tidak dibuat."
+        return 1
+    fi
+
     # Reload dan start service
     systemctl daemon-reload
     systemctl enable "$service_name"
@@ -1460,7 +1527,8 @@ EOF
     echo "Stop        : sudo systemctl stop $service_name"
     echo "Restart     : sudo systemctl restart $service_name"
     echo "Lihat log   : sudo journalctl -u $service_name -f"
-    echo "Lihat log   : tail -f $app_path/${service_name}.log"
+    echo "Lihat log   : sudo journalctl -u $service_name -f"
+    systemd_postcheck_summary "$service_name"
 }
 
 # === Konfigurasi Nginx untuk SSO ===

@@ -653,7 +653,8 @@ install_frankenphp() {
         cat > /etc/systemd/system/frankenphp.service << 'EOF'
 [Unit]
 Description=FrankenPHP Application Server
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1427,7 +1428,8 @@ install_sso() {
             cat > /etc/systemd/system/keycloak.service <<EOF
 [Unit]
 Description=Keycloak Service
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
@@ -1463,7 +1465,8 @@ EOF
             cat > /etc/systemd/system/keycloak.service <<EOF
 [Unit]
 Description=Keycloak Service
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
