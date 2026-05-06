@@ -1,94 +1,76 @@
 # Auto VPS Ubuntu Setup
 
-Script bash untuk setup VPS Ubuntu dari nol sampai siap hosting. Cocok buat yang males setup manual atau sering deploy VPS baru.
+Kumpulan skrip buat bantu setting VPS Ubuntu dari awal sampai siap dipake buat web atau aplikasi. Ada dua cara pakai: yang **simpel buat pemula** atau yang **lengkap buat yang udah biasa ngoprek**.
 
-## Yang Bisa Dilakukan
+---
 
-Script ini punya menu interaktif yang bisa install dan konfigurasi berbagai komponen web server. Dari PHP, Nginx, database, sampai WordPress bisa diinstall dengan beberapa klik. Ada juga fitur optimasi, keamanan, dan utilitas lainnya.
+## Ini cocok buat siapa?
 
-### Instalasi Dasar
+Buat kamu yang males ngisi satu-satu perintah pas baru beli VPS, atau sering bikin server baru dan pengen prosesnya cepat dan terarah.
 
-- **PHP** - Install PHP dengan banyak ekstensi yang umum dipake (Laravel, WordPress, dll). Bisa pilih versi PHP yang diinginkan.
-- **Nginx** - Web server dengan konfigurasi dasar yang siap pakai.
-- **Database** - Install MySQL/MariaDB atau PostgreSQL, pilih sesuai kebutuhan.
-- **phpMyAdmin** - Interface web untuk manage database MySQL/MariaDB.
-- **Node.js & npm** - Untuk aplikasi Node.js, bisa pilih versi LTS atau latest.
-- **FrankenPHP** - PHP application server yang lebih modern, alternatif dari PHP-FPM.
-- **WordPress** - Install WordPress otomatis dengan konfigurasi Nginx yang proper.
-- **SSO** - Setup Single Sign-On untuk autentikasi terpusat.
-- **Python** - Install Python dengan pip dan tools yang diperlukan.
-- **Docker** - Install Docker dan Docker Compose untuk containerization.
+---
 
-### Konfigurasi
+## Sebelum mulai
 
-- **Konfigurasi Aplikasi Web** - Setup virtual host Nginx untuk domain baru. Bisa untuk PHP atau aplikasi Node.js.
-- **Routing Berbasis Path** - Setup routing berdasarkan path untuk multiple aplikasi di satu domain.
-- **Konfigurasi PHP** - Edit setting PHP seperti memory_limit, upload_max_filesize, dll. Ada validasi input dan auto-detect versi PHP yang terinstall.
-- **Konfigurasi systemd** - Setup service systemd untuk aplikasi Node.js atau Python agar bisa auto-start dan manage dengan systemctl.
+- Pakai **Ubuntu** (umumnya 20.04 ke atas).
+- Harus login sebagai **admin server** (biasanya pakai `sudo`).
+- Pastikan VPS **kedap internet** buat download paket dan dependensi layanan.
 
-### Optimasi & Keamanan
+Kalau nanti ada pesan **command `rg` tidak ketemu**, itu cuma program bantu supaya skrip bisa cari teks cepat. Pasang saja dengan:
 
-- **Optimasi Server** - Tweak setting sistem untuk performa lebih baik.
-- **Sistem Cache** - Install dan setup cache system (Redis, Memcached, dll).
-- **Security Hardening** - Hardening keamanan server dengan berbagai best practices.
-- **Sistem Backup** - Setup backup otomatis untuk database dan file penting.
+`sudo apt install ripgrep`
 
-### Utilitas
+---
 
-- **Setup Dasar VPS** - **WAJIB DILAKUKAN PERTAMA KALI!** Update sistem, set hostname, timezone, locale, dan firewall. Script ini juga bisa ganti mirror APT (bisa pilih manual atau auto-detect yang tercepat).
-- **Info Sistem** - Tampilkan info lengkap sistem (CPU, RAM, disk, webserver, dll) dengan format yang rapi.
-- **SSL Let's Encrypt** - Auto-detect domain yang belum punya SSL dan aktifkan sekaligus. Untuk WordPress, config Nginx awalnya cuma HTTP, blok SSL baru diinject setelah pilih menu SSL ini.
-- **Hapus SSL Domain** - Hapus SSL certificate untuk domain tertentu.
-- **Setting Cron Job** - Setup cron job dengan mudah.
-- **Setup Virtual Environment (venv)** - Buat Python virtual environment.
-- **Menu Hapus** - Uninstall komponen yang sudah terinstall.
+## Cara jalanin
 
-## Cara Pakai
+Di folder project ini:
 
-1. Clone atau download repository ini
-2. Pastikan script executable:
-   ```bash
-   chmod +x auto-vps8.2.sh
-   ```
-3. Jalankan sebagai root:
-   ```bash
-   sudo ./auto-vps8.2.sh
-   ```
-4. **PENTING:** Pilih menu "15. Setup Dasar VPS" dulu sebelum install yang lain. Ini akan update sistem, set hostname, timezone, dan firewall.
+```bash
+chmod +x auto-vps8.2.sh
+sudo ./auto-vps8.2.sh
+```
 
-## Struktur File
+Nanti kamu diminta pilih **mode simpel** atau **mode lanjutan**.
 
-Script ini modular, jadi mudah di-maintain:
+**Tips:** Kalau pakai mode lanjutan, lebih enak pakai menu **setup dasar VPS** dulu (biasanya nomor 15) — itu yang ngurus update sistem, nama mesin, zona waktu, dan firewall ringkas. Baru setelah itu install PHP, database, dan lain-lain.
 
-- `auto-vps8.2.sh` - File utama, menu interaktif
-- `utils.sh` - Fungsi-fungsi helper (logging, validasi, dll)
-- `installers.sh` - Semua fungsi untuk install komponen
-- `configurators.sh` - Semua fungsi untuk konfigurasi
-- `systeminfo.sh` - Script untuk tampilkan info sistem
-- `php_config_menu.sh` - Menu khusus konfigurasi PHP
+---
 
-## Catatan Penting
+## Mode simpel
 
-- Script ini harus dijalankan sebagai root (pakai sudo)
-- Untuk Ubuntu (tested di Ubuntu 20.04, 22.04, 24.04)
-- Beberapa fitur butuh koneksi internet yang stabil
-- SSL Let's Encrypt butuh domain yang sudah pointing ke IP VPS
-- Script ini idempotent untuk beberapa operasi (misal setup dasar VPS), jadi aman dijalankan ulang
+Buat yang pengen **dibimbing langkah demi langkah**.
 
-## Tips
+- Ada **wizard setup cepat**: masukin domain dan folder project, skrip bantu tebak jenis aplikasinya (misalnya Laravel, WordPress, project Node), terus bantu beresin hal dasar seperti web server dan setting upload file.
+- Bisa **cek kondisi server** dulu sebelum ngapa-ngapain (RAM, disk, dan sebagainya).
+- Ada **cek aplikasi**: ringkasannya enak dibaca, ada opsi perbaikan cepat kalau ada yang nyangkut.
+- Bisa **cadangkan pengaturan penting** biar kalau salah bisa balikin feelingnya lebih tenang.
+- Ada **mode belajar** kalau mau tiap langkah dikasih penjelasan singkat.
 
-- Kalau install PHP, pilih ekstensi yang memang dibutuhkan aja. Terlalu banyak ekstensi bisa bikin install lama.
-- Untuk WordPress, pastikan domain sudah pointing ke VPS sebelum install. SSL bisa ditambahkan nanti lewat menu SSL.
-- Kalau pakai mirror APT yang lambat, bisa ganti dulu lewat menu Setup Dasar VPS sebelum install yang lain.
-- Info sistem bisa dipake untuk monitoring atau troubleshooting.
+SSL untuk banyak domain sekaligus tetap lewat **mode lanjutan**. Kalau aplikasinya jenis yang jarang (misalnya Python/Django tanpa panduan khusus di wizard), bisa lanjut dari mode lanjutan atau set manual.
 
-## Troubleshooting
+---
 
-- Kalau install gagal, cek koneksi internet dan pastikan VPS bisa akses repository Ubuntu.
-- Untuk SSL Let's Encrypt, pastikan port 80 dan 443 terbuka di firewall.
-- Kalau ada masalah dengan PHP-FPM, cek service status dengan `systemctl status php*-fpm`.
-- Untuk masalah database, cek log di `/var/log/mysql/` atau `/var/log/mariadb/`.
+## Mode lanjutan
+
+Menu lengkap seperti biasa: install PHP, Nginx, database, WordPress, Docker, dan banyak lagi. Skrip akan kasih konfirmasi kalau ada yang berpotensi ngubah banyak hal. Ada juga nomor menu buat **balik ke mode simpel** kalau pengen gaya wizard lagi.
+
+---
+
+## Cek kecepatan internet di VPS
+
+Lewat menu info sistem, bisa lihat tes kecepatan ke beberapa kota (termasuk sekitar Jakarta dan kota lain). Yang pertama biasanya pakai server otomatis; sisanya buat gambaran kecepatan ke arah wilayah tertentu.
+
+---
+
+## Hal yang sering bikin gagal (bahasa awam)
+
+- **Sertifikat HTTPS / Let's Encrypt gagal** — pastikan nama domain sudah benar-benar mengarah ke IP VPS ini, dan akses dari luar ke port web (biasanya 80 dan 443) nggak diblokir firewall.
+- **Upload file besar ditolak** — wizard mode simpel sudah bantu samakan batas upload di web server dan PHP; kalau masih kecil, bisa sesuaikan lagi lewat menu lanjutan.
+- **Website mutus putus (bad gateway)** — biasanya web server dan aplikasi (misalnya PHP) belum cocok atau salah satu layanan mati; cek dari menu cek aplikasi atau status layanan di server.
+
+---
 
 ## Kontribusi
 
-Kalau ada bug atau mau tambah fitur, silakan buat issue atau pull request. Script ini masih terus dikembangkan.
+Kalau nemu bug atau punya ide perbaikan, silakan buka issue atau pull request.
