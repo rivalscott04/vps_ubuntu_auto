@@ -63,7 +63,7 @@ Lewat menu info sistem, bisa lihat tes kecepatan ke beberapa kota (termasuk seki
 
 ---
 
-## Hal yang sering bikin gagal (bahasa awam)
+## Hal yang sering bikin gagal
 
 - **Sertifikat HTTPS / Let's Encrypt gagal** — pastikan nama domain sudah benar-benar mengarah ke IP VPS ini, dan akses dari luar ke port web (biasanya 80 dan 443) nggak diblokir firewall.
 - **Upload file besar ditolak** — wizard mode simpel sudah bantu samakan batas upload di web server dan PHP; kalau masih kecil, bisa sesuaikan lagi lewat menu lanjutan.
