@@ -608,6 +608,46 @@ _install_bun_runtime() {
     check_and_install_package curl
     check_and_install_package unzip
 
+    _bun_firewall_pause_if_needed() {
+        # Disable sementara firewall kalau aktif. Kita restore di akhir.
+        BUN_FIREWALL_WAS_ACTIVE=""
+        BUN_FIREWALL_KIND=""
+
+        if command -v ufw >/dev/null 2>&1; then
+            if sudo ufw status 2>/dev/null | grep -qi "Status: active"; then
+                BUN_FIREWALL_WAS_ACTIVE="1"
+                BUN_FIREWALL_KIND="ufw"
+                log_warning "UFW aktif. Disable sementara untuk install Bun..."
+                sudo ufw disable >/dev/null 2>&1 || true
+                return 0
+            fi
+        fi
+
+        if command -v systemctl >/dev/null 2>&1; then
+            if systemctl is-active --quiet firewalld 2>/dev/null; then
+                BUN_FIREWALL_WAS_ACTIVE="1"
+                BUN_FIREWALL_KIND="firewalld"
+                log_warning "firewalld aktif. Stop sementara untuk install Bun..."
+                sudo systemctl stop firewalld >/dev/null 2>&1 || true
+                return 0
+            fi
+        fi
+    }
+
+    _bun_firewall_resume_if_needed() {
+        [ "${BUN_FIREWALL_WAS_ACTIVE:-}" = "1" ] || return 0
+        case "${BUN_FIREWALL_KIND:-}" in
+            ufw)
+                log_info "Mengaktifkan kembali UFW..."
+                sudo ufw --force enable >/dev/null 2>&1 || true
+                ;;
+            firewalld)
+                log_info "Menjalankan kembali firewalld..."
+                sudo systemctl start firewalld >/dev/null 2>&1 || true
+                ;;
+        esac
+    }
+
     _bun_ensure_path() {
         # Auto set PATH di bash/zsh biar orang awam ga bingung "command not found"
         local line1='export BUN_INSTALL="$HOME/.bun"'
@@ -665,6 +705,10 @@ _install_bun_runtime() {
     echo "2. Direct download ZIP (GitHub release)"
     read -r -p "Pilih [1-2]: " bun_method
     bun_method="${bun_method:-1}"
+
+    _bun_firewall_pause_if_needed
+    # Pastikan firewall dikembalikan lagi apapun hasilnya
+    trap _bun_firewall_resume_if_needed RETURN
 
     if [ "$bun_method" = "2" ]; then
         log_info "Menginstal Bun via direct ZIP..."

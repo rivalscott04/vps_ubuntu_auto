@@ -24,6 +24,51 @@ ensure_prereqs() {
   fi
 }
 
+FIREWALL_WAS_ACTIVE=""
+FIREWALL_KIND=""
+
+firewall_pause_if_needed() {
+  # Some VPS images have strict egress filtering via firewall tooling.
+  # Temporarily disable if active; we will restore it in the EXIT trap.
+
+  if command -v ufw >/dev/null 2>&1; then
+    if sudo ufw status 2>/dev/null | grep -qi "Status: active"; then
+      FIREWALL_WAS_ACTIVE="1"
+      FIREWALL_KIND="ufw"
+      warn "UFW aktif. Disable sementara untuk install bun..."
+      sudo ufw disable >/dev/null 2>&1 || true
+      return 0
+    fi
+  fi
+
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+      FIREWALL_WAS_ACTIVE="1"
+      FIREWALL_KIND="firewalld"
+      warn "firewalld aktif. Stop sementara untuk install bun..."
+      sudo systemctl stop firewalld >/dev/null 2>&1 || true
+      return 0
+    fi
+  fi
+}
+
+firewall_resume_if_needed() {
+  if [[ "${FIREWALL_WAS_ACTIVE}" != "1" ]]; then
+    return 0
+  fi
+
+  case "${FIREWALL_KIND}" in
+    ufw)
+      warn "Mengaktifkan kembali UFW..."
+      sudo ufw --force enable >/dev/null 2>&1 || true
+      ;;
+    firewalld)
+      warn "Menjalankan kembali firewalld..."
+      sudo systemctl start firewalld >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+
 add_bun_to_path_hint() {
   # Bun installer puts bun in ~/.bun/bin/bun
   local bun_bin="${HOME}/.bun/bin"
@@ -64,6 +109,8 @@ verify() {
 
 main() {
   ensure_prereqs
+  trap firewall_resume_if_needed EXIT
+  firewall_pause_if_needed
 
   if install_via_bun_com; then
     if verify; then
