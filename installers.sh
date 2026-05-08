@@ -608,27 +608,10 @@ _install_bun_runtime() {
     check_and_install_package curl
     check_and_install_package unzip
 
-    # Gunakan installer yang sudah dibuat di repo ini:
-    # - Coba bun.com dulu (retry + IPv4)
-    # - Kalau gagal, otomatis fallback ke mirror download binary
-    local project_root="${_root_dir:-$(pwd)}"
-    local bun_installer="${project_root}/scripts/install-bun.sh"
-
-    if [ ! -f "$bun_installer" ]; then
-        log_error "Installer Bun tidak ditemukan: ${bun_installer}"
-        log_error "Pastikan kamu jalanin advanced mode dari folder project ini."
-        return 1
-    fi
-
-    chmod +x "$bun_installer" >/dev/null 2>&1 || true
-
-    log_info "Menginstal Bun (auto fallback jika gagal)..."
-    bash "$bun_installer"
-    local rc=$?
-    if [ $rc -ne 0 ]; then
-        log_error "Gagal menginstal Bun (kode: $rc)"
-        return $rc
-    fi
+    # Referensi resmi:
+    # https://bun.com/docs/installation#macos-%26-linux
+    log_info "Menginstal Bun via installer resmi (bun.com)..."
+    curl -fsSL https://bun.com/install | bash
 
     # Pastikan binary Bun dapat diakses secara global
     if [ -x "$HOME/.bun/bin/bun" ]; then
@@ -637,7 +620,9 @@ _install_bun_runtime() {
 
     if command -v bun > /dev/null 2>&1; then
         bun_version=$(bun --version)
+        bun_rev=$(bun --revision 2>/dev/null || true)
         log_info "Bun ${bun_version} berhasil diinstall!"
+        [ -n "$bun_rev" ] && log_info "Revision: ${bun_rev}"
     else
         log_error "Gagal menginstal Bun. Silakan cek log di atas atau coba ulangi instalasi secara manual."
     fi
