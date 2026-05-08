@@ -10,6 +10,11 @@ ensure_prereqs() {
     sudo apt-get update -y
     sudo apt-get install -y curl ca-certificates
   fi
+  if ! command -v wget >/dev/null 2>&1; then
+    log "Installing wget..."
+    sudo apt-get update -y
+    sudo apt-get install -y wget
+  fi
   if ! command -v unzip >/dev/null 2>&1; then
     log "Installing unzip..."
     sudo apt-get update -y
@@ -51,7 +56,12 @@ download_with_mirrors() {
     fi
 
     log "Downloading: ${url}"
-    if curl -fL --retry 5 --retry-delay 1 -o "$out" "$url"; then
+    if command -v wget >/dev/null 2>&1; then
+      if wget -O "$out" --tries=3 --timeout=20 --progress=bar:force:noscroll "$url"; then
+        return 0
+      fi
+    fi
+    if curl -fL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 1 -o "$out" "$url"; then
       return 0
     fi
   done

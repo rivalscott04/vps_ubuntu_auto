@@ -607,6 +607,7 @@ _install_bun_runtime() {
     log_info "Mempersiapkan instalasi Bun..."
     check_and_install_package curl
     check_and_install_package unzip
+    check_and_install_package wget
 
     _bun_firewall_pause_if_needed() {
         # Disable sementara firewall kalau aktif. Kita restore di akhir.
@@ -671,13 +672,33 @@ _install_bun_runtime() {
             *) log_error "Arsitektur tidak didukung untuk Bun: ${arch}"; return 1 ;;
         esac
 
-        url="https://github.com/oven-sh/bun/releases/latest/download/${asset}"
         log_info "Direct download Bun: ${asset}"
 
         tmpzip="$(mktemp -t bun.zip.XXXXXX)"
         tmpdir="$(mktemp -d -t bun.unzip.XXXXXX)"
 
-        if ! curl -fL --retry 5 --retry-delay 1 -o "$tmpzip" "$url"; then
+        local -a urls=(
+            "https://github.com/oven-sh/bun/releases/latest/download/${asset}"
+            "https://ghproxy.com/https://github.com/oven-sh/bun/releases/latest/download/${asset}"
+            "https://mirror.ghproxy.com/https://github.com/oven-sh/bun/releases/latest/download/${asset}"
+            "https://download.fastgit.org/oven-sh/bun/releases/latest/download/${asset}"
+        )
+
+        local ok=""
+        for url in "${urls[@]}"; do
+            log_info "Mengunduh: ${url}"
+            if command -v wget >/dev/null 2>&1; then
+                if wget -O "$tmpzip" --tries=3 --timeout=20 --progress=bar:force:noscroll "$url"; then
+                    ok="1"
+                    break
+                fi
+            fi
+            if curl -fL --connect-timeout 10 --max-time 300 --retry 3 --retry-delay 1 -o "$tmpzip" "$url"; then
+                ok="1"
+                break
+            fi
+        done
+        if [ -z "$ok" ]; then
             rm -f "$tmpzip" 2>/dev/null || true
             rm -rf "$tmpdir" 2>/dev/null || true
             return 1
@@ -714,13 +735,16 @@ _install_bun_runtime() {
         log_info "Menginstal Bun via direct ZIP..."
         if ! _bun_install_direct_zip; then
             log_warning "Direct ZIP gagal. Coba fallback ke installer resmi bun.com..."
-            curl -fsSL https://bun.com/install | bash
+            curl --connect-timeout 10 --max-time 300 -fsSL https://bun.com/install | bash || true
         fi
     else
         # Referensi resmi:
         # https://bun.com/docs/installation#macos-%26-linux
         log_info "Menginstal Bun via installer resmi (bun.com)..."
-        curl -fsSL https://bun.com/install | bash
+        if ! curl --connect-timeout 10 --max-time 300 -fsSL https://bun.com/install | bash; then
+            log_warning "Installer bun.com gagal/timeout. Coba direct ZIP (dengan mirror)..."
+            _bun_install_direct_zip || true
+        fi
     fi
 
     _bun_ensure_path
