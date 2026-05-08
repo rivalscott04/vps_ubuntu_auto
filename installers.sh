@@ -606,19 +606,33 @@ _install_nodejs_npm() {
 _install_bun_runtime() {
     log_info "Mempersiapkan instalasi Bun..."
     check_and_install_package curl
+    check_and_install_package unzip
 
-    # Tentukan direktori instalasi Bun (default /usr/local/bun)
-    local bun_install_dir="${BUN_INSTALL:-/usr/local/bun}"
-    export BUN_INSTALL="$bun_install_dir"
+    # Gunakan installer yang sudah dibuat di repo ini:
+    # - Coba bun.com dulu (retry + IPv4)
+    # - Kalau gagal, otomatis fallback ke mirror download binary
+    local project_root="${_root_dir:-$(pwd)}"
+    local bun_installer="${project_root}/scripts/install-bun.sh"
 
-    log_info "Mengunduh dan menginstal Bun..."
-    curl -fsSL https://bun.sh/install | bash -
+    if [ ! -f "$bun_installer" ]; then
+        log_error "Installer Bun tidak ditemukan: ${bun_installer}"
+        log_error "Pastikan kamu jalanin advanced mode dari folder project ini."
+        return 1
+    fi
+
+    chmod +x "$bun_installer" >/dev/null 2>&1 || true
+
+    log_info "Menginstal Bun (auto fallback jika gagal)..."
+    bash "$bun_installer"
+    local rc=$?
+    if [ $rc -ne 0 ]; then
+        log_error "Gagal menginstal Bun (kode: $rc)"
+        return $rc
+    fi
 
     # Pastikan binary Bun dapat diakses secara global
-    if [ -x "$bun_install_dir/bin/bun" ]; then
-        ln -sf "$bun_install_dir/bin/bun" /usr/local/bin/bun
-    elif [ -x "$HOME/.bun/bin/bun" ]; then
-        ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun
+    if [ -x "$HOME/.bun/bin/bun" ]; then
+        ln -sf "$HOME/.bun/bin/bun" /usr/local/bin/bun 2>/dev/null || true
     fi
 
     if command -v bun > /dev/null 2>&1; then

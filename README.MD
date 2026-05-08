@@ -31,6 +31,25 @@ chmod +x auto-vps8.2.sh
 sudo ./auto-vps8.2.sh
 ```
 
+---
+
+## Install Bun (Debian/Ubuntu VPS)
+
+Kalau install `bun` yang via GitHub suka gagal (mis. ke-block / rate limit), pakai script ini. Script utama akan coba installer resmi `bun.com` dulu; kalau gagal, dia otomatis jalanin fallback yang nyoba beberapa mirror download binary.
+
+Di folder project ini:
+
+```bash
+chmod +x scripts/install-bun.sh scripts/install-bun-fallback.sh
+./scripts/install-bun.sh
+```
+
+Kalau sudah sukses, script akan otomatis ngejalanin:
+
+```bash
+bun --version
+```
+
 Nanti kamu diminta pilih **mode simpel** atau **mode lanjutan**.
 
 **Tips:** Kalau pakai mode lanjutan, lebih enak pakai menu **setup dasar VPS** dulu (biasanya nomor 15) — itu yang ngurus update sistem, nama mesin, zona waktu, dan firewall ringkas. Baru setelah itu install PHP, database, dan lain-lain.
