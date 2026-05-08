@@ -123,6 +123,7 @@ advanced_option_context() {
         3)  echo "Instal database. Dampak: service DB baru + setup akun."; return 0 ;;
         4)  echo "Instal phpMyAdmin. Dampak: tulis config Nginx dan web path."; return 0 ;;
         5)  echo "Instal Node/Bun runtime. Dampak: install toolchain JavaScript."; return 0 ;;
+        27) echo "Instal Bun saja (cepat). Dampak: install runtime Bun."; return 0 ;;
         6)  echo "Instal FrankenPHP. Dampak: tambah service app server baru."; return 0 ;;
         7)  echo "Instal WordPress. Dampak: tulis file web, Nginx config, opsional SSL."; return 0 ;;
         8)  echo "Setup SSO/Keycloak. Dampak: install Java & service Keycloak."; return 0 ;;
@@ -166,6 +167,7 @@ advanced_execute_choice() {
         3) install_database ;;
         4) install_phpmyadmin ;;
         5) install_nodejs ;;
+        27) _install_bun_runtime ;;
         6) install_frankenphp ;;
         7) run_wordpress_with_progress ;;
         8) run_sso_with_progress ;;
@@ -212,11 +214,12 @@ while true; do
     printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi Aplikasi Web" "" "24. Konfigurasi systemd Python"
     printf "│ %-37s │ %-37s │ %-37s │\n" "10. Konfigurasi Routing Berbasis Path" "" "25. Instal & Setup Docker"
     printf "│ %-37s │ %-37s │ %-37s │\n" "" "" "26. Menu Hapus (uninstall)"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "27. Instal Bun saja (cepat)" "" ""
     echo "├───────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────┤"
     printf "│ %-111s │\n" "90. Pindah ke Simple Mode"
     printf "│ %-111s │\n" "0. Keluar"
     echo "└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-    read -p "Pilihan [0-26/90]: " choice
+    read -p "Pilihan [0-27/90]: " choice
 
     if advanced_option_context "$choice" >/dev/null 2>&1; then
         echo

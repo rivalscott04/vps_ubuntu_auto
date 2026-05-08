@@ -40,12 +40,12 @@ install_via_bun_com() {
   log "Trying official installer (bun.com)..."
 
   # Prefer strict TLS and retries. If IPv6 broken, fallback to IPv4 variant below.
-  if curl --retry 5 --retry-delay 1 -fsSL https://bun.com/install | bash; then
+  if curl --connect-timeout 10 --max-time 300 --retry 5 --retry-delay 1 -fsSL https://bun.com/install | bash; then
     return 0
   fi
 
   warn "bun.com installer failed, retrying with IPv4 forced..."
-  curl -4 --retry 5 --retry-delay 1 -fsSL https://bun.com/install | bash
+  curl -4 --connect-timeout 10 --max-time 300 --retry 5 --retry-delay 1 -fsSL https://bun.com/install | bash
 }
 
 verify() {
