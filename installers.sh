@@ -608,10 +608,78 @@ _install_bun_runtime() {
     check_and_install_package curl
     check_and_install_package unzip
 
-    # Referensi resmi:
-    # https://bun.com/docs/installation#macos-%26-linux
-    log_info "Menginstal Bun via installer resmi (bun.com)..."
-    curl -fsSL https://bun.com/install | bash
+    _bun_ensure_path() {
+        # Auto set PATH di bash/zsh biar orang awam ga bingung "command not found"
+        local line1='export BUN_INSTALL="$HOME/.bun"'
+        local line2='export PATH="$BUN_INSTALL/bin:$PATH"'
+        local f
+        for f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+            [ -f "$f" ] || continue
+            grep -q 'BUN_INSTALL="\$HOME/.bun"' "$f" 2>/dev/null || echo "$line1" >> "$f"
+            grep -q 'PATH="\$BUN_INSTALL/bin:\$PATH"' "$f" 2>/dev/null || echo "$line2" >> "$f"
+        done
+        export BUN_INSTALL="$HOME/.bun"
+        export PATH="$BUN_INSTALL/bin:$PATH"
+    }
+
+    _bun_install_direct_zip() {
+        local arch asset url tmpzip tmpdir bun_path
+        arch="$(uname -m)"
+        case "$arch" in
+            x86_64|amd64) asset="bun-linux-x64.zip" ;;
+            aarch64|arm64) asset="bun-linux-aarch64.zip" ;;
+            *) log_error "Arsitektur tidak didukung untuk Bun: ${arch}"; return 1 ;;
+        esac
+
+        url="https://github.com/oven-sh/bun/releases/latest/download/${asset}"
+        log_info "Direct download Bun: ${asset}"
+
+        tmpzip="$(mktemp -t bun.zip.XXXXXX)"
+        tmpdir="$(mktemp -d -t bun.unzip.XXXXXX)"
+
+        if ! curl -fL --retry 5 --retry-delay 1 -o "$tmpzip" "$url"; then
+            rm -f "$tmpzip" 2>/dev/null || true
+            rm -rf "$tmpdir" 2>/dev/null || true
+            return 1
+        fi
+
+        unzip -q "$tmpzip" -d "$tmpdir"
+        bun_path="$(find "$tmpdir" -type f -name bun -perm -111 2>/dev/null | head -n 1 || true)"
+        if [ -z "$bun_path" ]; then
+            log_error "Binary bun tidak ditemukan di ZIP"
+            rm -f "$tmpzip" 2>/dev/null || true
+            rm -rf "$tmpdir" 2>/dev/null || true
+            return 1
+        fi
+
+        mkdir -p "$HOME/.bun/bin"
+        install -m 0755 "$bun_path" "$HOME/.bun/bin/bun"
+
+        rm -f "$tmpzip" 2>/dev/null || true
+        rm -rf "$tmpdir" 2>/dev/null || true
+        return 0
+    }
+
+    echo "Metode instalasi Bun:"
+    echo "1. Installer resmi (bun.com) [default]"
+    echo "2. Direct download ZIP (GitHub release)"
+    read -r -p "Pilih [1-2]: " bun_method
+    bun_method="${bun_method:-1}"
+
+    if [ "$bun_method" = "2" ]; then
+        log_info "Menginstal Bun via direct ZIP..."
+        if ! _bun_install_direct_zip; then
+            log_warning "Direct ZIP gagal. Coba fallback ke installer resmi bun.com..."
+            curl -fsSL https://bun.com/install | bash
+        fi
+    else
+        # Referensi resmi:
+        # https://bun.com/docs/installation#macos-%26-linux
+        log_info "Menginstal Bun via installer resmi (bun.com)..."
+        curl -fsSL https://bun.com/install | bash
+    fi
+
+    _bun_ensure_path
 
     # Pastikan binary Bun dapat diakses secara global
     if [ -x "$HOME/.bun/bin/bun" ]; then
