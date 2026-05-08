@@ -230,7 +230,7 @@ while true; do
                 continue
             fi
         else
-            echo "$(adv_badge INFO) $(advanced_option_context "$choice")"
+            echo "$(ui_badge INFO) $(advanced_option_context "$choice")"
         fi
     fi
 
