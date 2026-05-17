@@ -309,8 +309,8 @@ install_phpmyadmin() {
     tar xzf /tmp/phpmyadmin.tar.gz -C /tmp/
     mv /tmp/phpMyAdmin-*-all-languages/* "$pma_path/"
 
-    # Generate blowfish secret
-    blowfish_secret=$(openssl rand -base64 32)
+    # Generate blowfish secret (must be exactly 32 bytes for cookie auth; see phpMyAdmin docs)
+    blowfish_secret=$(openssl rand -base64 24 | tr -d '\n')
     # Escape karakter yang bisa mengacaukan perintah sed (/, &)
     escaped_blowfish_secret=$(printf '%s\n' "$blowfish_secret" | sed -e 's/[\/&]/\\&/g')
 
