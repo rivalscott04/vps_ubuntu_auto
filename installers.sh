@@ -1770,4 +1770,58 @@ install_docker() {
         log_error "Docker service gagal diaktifkan!"
         return 1
     fi
-} 
+}
+
+install_mikhfast() {
+    log_info "Mempersiapkan instalasi MIKFAST (MikroTik Mikhmon)..."
+
+    echo "[1/3] Cek dependency (git, PHP-FPM)..."
+    check_and_install_package git
+
+    if [ -z "$selected_php_version" ]; then
+        for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+            if dpkg -l | grep -q "php$version"; then
+                selected_php_version="$version"
+                break
+            fi
+        done
+    fi
+    if [ -z "$selected_php_version" ]; then
+        log_warning "PHP belum terinstal. MIKFAST butuh PHP-FPM — install PHP dulu (menu 1) disarankan."
+    else
+        log_info "Menggunakan PHP versi ${selected_php_version}"
+        check_and_install_package "php${selected_php_version}-fpm"
+    fi
+
+    local installers_root install_script
+    installers_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    install_script="${installers_root}/scripts/install-mikhfast.sh"
+
+    if [ ! -f "$install_script" ]; then
+        log_error "Script install-mikhfast.sh tidak ditemukan: $install_script"
+        return 1
+    fi
+
+    echo "[2/3] Konfigurasi target instalasi..."
+    local install_dir="/var/www/mikhfast"
+    read -r -p "Path instalasi [/var/www/mikhfast]: " custom_dir
+    if [ -n "$custom_dir" ]; then
+        install_dir="$custom_dir"
+    fi
+
+    echo "Mode instalasi:"
+    echo "1. Fresh install (clone repo)"
+    echo "2. Update existing (git pull + protect config)"
+    echo "3. Setup saja (skip clone/pull, config + permission)"
+    read -r -p "Pilihan [1-3]: " mikhfast_mode
+
+    local extra_args=()
+    case "$mikhfast_mode" in
+        2) extra_args+=(--update) ;;
+        3) extra_args+=(--skip-pull) ;;
+        *) ;;
+    esac
+
+    echo "[3/3] Menjalankan installer MIKFAST..."
+    MIKFAST_DIR="$install_dir" bash "$install_script" "${extra_args[@]}"
+}

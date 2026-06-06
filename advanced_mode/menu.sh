@@ -115,6 +115,14 @@ run_docker_with_progress() {
     return $?
 }
 
+run_mikhfast_with_progress() {
+    echo "$(ui_badge INFO) Menjalankan: Instal MIKFAST (MikroTik Mikhmon)"
+    install_mikhfast
+    local rc=$?
+    [ $rc -eq 0 ] && echo "$(ui_badge OK) Selesai: Instal MIKFAST" || echo "$(ui_badge FAIL) Gagal: Instal MIKFAST (kode: $rc)"
+    return $rc
+}
+
 advanced_option_context() {
     local choice="$1"
     case "$choice" in
@@ -144,6 +152,7 @@ advanced_option_context() {
         24) echo "Konfigurasi systemd Python. Dampak: buat/ubah service unit."; return 0 ;;
         25) echo "Instal Docker. Dampak: install engine/container runtime."; return 0 ;;
         26) echo "Menu uninstall/cleanup. Dampak: bisa menghapus service/data."; return 0 ;;
+        27) echo "Instal MIKFAST (MikroTik Mikhmon). Dampak: clone repo PHP + tulis config web."; return 0 ;;
         90) echo "Pindah ke Simple Mode."; return 0 ;;
         0)  echo "Keluar dari script."; return 0 ;;
         *)  return 1 ;;
@@ -153,7 +162,7 @@ advanced_option_context() {
 advanced_requires_confirmation() {
     local choice="$1"
     case "$choice" in
-        4|7|8|9|10|15|17|18|19|20|21|24|25|26) return 0 ;;
+        4|7|8|9|10|15|17|18|19|20|21|24|25|26|27) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -187,6 +196,7 @@ advanced_execute_choice() {
         24) configure_python_systemd ;;
         25) run_docker_with_progress ;;
         26) cleanup_menu ;;
+        27) run_mikhfast_with_progress ;;
         99) setup_basic_vps ;;
         90) return 10 ;;
         0) return 0 ;;
@@ -212,11 +222,12 @@ while true; do
     printf "│ %-37s │ %-37s │ %-37s │\n" "9. Konfigurasi Aplikasi Web" "" "24. Konfigurasi systemd Python"
     printf "│ %-37s │ %-37s │ %-37s │\n" "10. Konfigurasi Routing Berbasis Path" "" "25. Instal & Setup Docker"
     printf "│ %-37s │ %-37s │ %-37s │\n" "" "" "26. Menu Hapus (uninstall)"
+    printf "│ %-37s │ %-37s │ %-37s │\n" "" "" "27. Instal MIKFAST (MikroTik)"
     echo "├───────────────────────────────────────────────┴───────────────────────────────────────────────┴───────────────────────────────────────────────┤"
     printf "│ %-111s │\n" "90. Pindah ke Simple Mode"
     printf "│ %-111s │\n" "0. Keluar"
     echo "└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘"
-    read -p "Pilihan [0-26/90]: " choice
+    read -p "Pilihan [0-27/90]: " choice
 
     if advanced_option_context "$choice" >/dev/null 2>&1; then
         echo
