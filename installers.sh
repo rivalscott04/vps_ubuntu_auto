@@ -16,20 +16,22 @@ install_php() {
     fi
     
     echo "Pilih versi PHP yang ingin diinstall:"
-    echo "1. PHP 8.4 (jika tersedia)"
-    echo "2. PHP 8.3"
-    echo "3. PHP 8.2"
-    echo "4. PHP 8.1"
-    echo "5. PHP 8.0"
-    echo "6. PHP 7.4"
-    read -p "Pilihan [1-6]: " php_choice
+    echo "1. PHP 8.5 (jika tersedia)"
+    echo "2. PHP 8.4"
+    echo "3. PHP 8.3"
+    echo "4. PHP 8.2"
+    echo "5. PHP 8.1"
+    echo "6. PHP 8.0"
+    echo "7. PHP 7.4"
+    read -p "Pilihan [1-7]: " php_choice
     case $php_choice in
-        1) selected_php_version="8.4" ;;
-        2) selected_php_version="8.3" ;;
-        3) selected_php_version="8.2" ;;
-        4) selected_php_version="8.1" ;;
-        5) selected_php_version="8.0" ;;
-        6) selected_php_version="7.4" ;;
+        1) selected_php_version="8.5" ;;
+        2) selected_php_version="8.4" ;;
+        3) selected_php_version="8.3" ;;
+        4) selected_php_version="8.2" ;;
+        5) selected_php_version="8.1" ;;
+        6) selected_php_version="8.0" ;;
+        7) selected_php_version="7.4" ;;
         *) log_warning "Pilihan tidak valid, menggunakan default 8.2"; selected_php_version="8.2" ;;
     esac
     echo "[1/2] Update repository..."
@@ -237,7 +239,7 @@ install_phpmyadmin() {
     # Deteksi versi PHP yang terinstall
     if [ -z "$selected_php_version" ]; then
         # Cek versi PHP yang terinstall
-        for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+        for version in "8.5" "8.4" "8.3" "8.2" "8.1" "8.0" "7.4"; do
             if dpkg -l | grep -q "php$version"; then
                 selected_php_version="$version"
                 break
@@ -816,7 +818,7 @@ install_wordpress() {
 
     # Pastikan PHP dan ekstensi yang dibutuhkan terinstal
     if [ -z "$selected_php_version" ]; then
-        for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+        for version in "8.5" "8.4" "8.3" "8.2" "8.1" "8.0" "7.4"; do
             if dpkg -l | grep -q "php$version"; then
                 selected_php_version="$version"
                 break
@@ -1779,7 +1781,7 @@ install_mikhfast() {
     check_and_install_package git
 
     if [ -z "$selected_php_version" ]; then
-        for version in "8.3" "8.2" "8.1" "8.0" "7.4"; do
+        for version in "8.5" "8.4" "8.3" "8.2" "8.1" "8.0" "7.4"; do
             if dpkg -l | grep -q "php$version"; then
                 selected_php_version="$version"
                 break

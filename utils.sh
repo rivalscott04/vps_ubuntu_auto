@@ -115,6 +115,54 @@ safe_apt_upgrade() {
     done
 }
 
+# Pilih folder dari base path (default /var/www). Hasil disimpan di SELECTED_DIRECTORY.
+select_directory_from_path() {
+    local base_path="${1:-/var/www}"
+    local -a dirs=()
+    local i pick custom_path
+
+    if [ ! -d "$base_path" ]; then
+        log_warning "Folder $base_path tidak ditemukan."
+        read -r -p "Masukkan path root aplikasi secara manual: " SELECTED_DIRECTORY
+        return 0
+    fi
+
+    while IFS= read -r dir; do
+        dirs+=("$dir")
+    done < <(find "$base_path" -mindepth 1 -maxdepth 1 -type d ! -name '.*' 2>/dev/null | sort)
+
+    if [ "${#dirs[@]}" -eq 0 ]; then
+        log_warning "Tidak ada folder di $base_path."
+        read -r -p "Masukkan path root aplikasi secara manual: " SELECTED_DIRECTORY
+        return 0
+    fi
+
+    echo "Folder yang tersedia di $base_path:"
+    for i in "${!dirs[@]}"; do
+        printf "%s) %s\n" "$((i + 1))" "${dirs[$i]}"
+    done
+    echo "0) Masukkan path manual"
+
+    while true; do
+        read -r -p "Pilih folder [0-${#dirs[@]}]: " pick
+        if [ "$pick" = "0" ]; then
+            read -r -p "Masukkan path root aplikasi (misal: /var/www/app): " custom_path
+            if [ -n "$custom_path" ]; then
+                SELECTED_DIRECTORY="$custom_path"
+                break
+            fi
+            log_error "Path tidak boleh kosong."
+        elif [[ "$pick" =~ ^[0-9]+$ ]] && [ "$pick" -ge 1 ] && [ "$pick" -le "${#dirs[@]}" ]; then
+            SELECTED_DIRECTORY="${dirs[$((pick - 1))]}"
+            break
+        else
+            log_error "Pilihan tidak valid."
+        fi
+    done
+
+    log_info "Path dipilih: $SELECTED_DIRECTORY"
+}
+
 safe_apt_install() {
     # $@ = paket yang ingin diinstall
     echo -e "\e[1;36m[INFO]\e[0m Akan menginstall: $*"

@@ -31,7 +31,8 @@ configure_webapp() {
     else
         read -p "Masukkan domain (misal: domain.com): " domain_name
     fi
-    read -p "Masukkan path root aplikasi (misal: /var/www/app): " app_path
+    select_directory_from_path "/var/www"
+    app_path="$SELECTED_DIRECTORY"
     
     case $app_type in
         1)
@@ -286,8 +287,8 @@ configure_webapp_path_based() {
         echo "6. Svelte (static, folder dist)"
         read -p "Pilihan [1-6]: " app_type
         
-        read -p "Masukkan path root aplikasi (misal: /var/www/$app_path_name): " app_root
-        app_root=${app_root:-/var/www/$app_path_name}
+        select_directory_from_path "/var/www"
+        app_root="$SELECTED_DIRECTORY"
         
         # Simpan konfigurasi aplikasi
         case $app_type in
